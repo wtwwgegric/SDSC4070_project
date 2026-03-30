@@ -7,6 +7,11 @@ Default endpoint is `https://google.serper.dev/search` but can be overridden wit
 import os
 from typing import List, Any, Dict
 import requests
+from dotenv import load_dotenv
+
+# Ensure .env is loaded even if this module is imported before config.py
+_ENV_PATH = os.path.join(os.path.dirname(__file__), "..", ".env")
+load_dotenv(dotenv_path=_ENV_PATH, override=True)
 
 SERPER_URL = os.getenv("SERPER_URL", "https://google.serper.dev/search")
 

@@ -9,12 +9,12 @@ def refine_value(task_description: str, model: str = None) -> str:
     client = get_client()
     model = model or get_model("gpt-4o-mini")
     prompt = (
-        "你是一位資深職涯顧問。將以下看似平凡的工作描述，轉化為具備商業價值的 CV 條目。"
-        "規則：\n"
-        "1. 只能使用原描述中實際存在的事實，不可捏造數字或職責。\n"
-        "2. 輸出 1-2 句英文（適合 CV），句末用括號補充一個可量化指標（若可推算）。\n"
-        "3. 同時輸出一行中文摘要。\n\n"
-        f"原始描述：{task_description}\n\n輸出："
+        "You are a seasoned career consultant. Transform the following seemingly mundane job description into commercially valuable CV entries."
+        "Rules:\n"
+        "1. Only use facts present in the original description, do not fabricate numbers or responsibilities.\n"
+        "2. Output 1-2 sentences in English (suitable for a CV), with a quantifiable metric in parentheses if applicable.\n"
+        f"Original description: {task_description}\n\nOutput:"
+
     )
 
     resp = client.chat.completions.create(

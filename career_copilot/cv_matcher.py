@@ -62,7 +62,7 @@ def match_cv_to_jd(
         return []
 
     client = get_client()
-    model = model or get_model("gpt-4o-mini")
+    model = model or get_model("qwen-plus")
     results: list[dict[str, Any]] = []
 
     seen_passages: set[str] = set()

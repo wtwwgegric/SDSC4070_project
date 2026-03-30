@@ -62,9 +62,17 @@ with st.sidebar:
     if uploaded_cv:
         raw_bytes = uploaded_cv.read()
         with st.spinner("Extracting text from PDF…"):
-            st.session_state["cv_text"] = load_pdf_from_bytes(raw_bytes)
-            st.session_state["cv_indexed"] = False  # require re-index on new upload
-        st.success(f"Extracted {len(st.session_state['cv_text'])} characters")
+            extracted = load_pdf_from_bytes(raw_bytes)
+            st.session_state["cv_text"] = extracted
+            st.session_state["cv_indexed"] = False
+        if extracted:
+            st.success(f"Extracted {len(extracted)} characters")
+        else:
+            st.error(
+                "Could not extract text from this PDF. "
+                "It may be a scanned/image-only file. "
+                "Please use a text-based PDF or copy-paste your CV text manually."
+            )
 
     if st.session_state["cv_text"]:
         st.caption(f"CV loaded ✅ ({len(st.session_state['cv_text'])} chars)")

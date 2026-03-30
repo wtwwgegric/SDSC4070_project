@@ -14,24 +14,22 @@ OPENAI_MODEL     — optional; default gpt-4o-mini / qwen-plus
 SERPER_API_KEY   — optional; needed for company culture lookup
 """
 import os
-from functools import lru_cache
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
 # Load .env from the project root (two levels up from this file)
 _ENV_PATH = os.path.join(os.path.dirname(__file__), "..", ".env")
-load_dotenv(dotenv_path=_ENV_PATH, override=False)
+load_dotenv(dotenv_path=_ENV_PATH, override=True)  # override=True so .env always wins
 
 # Qwen-compatible endpoint
 QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 
-@lru_cache(maxsize=1)
 def get_client() -> OpenAI:
-    """Return a cached OpenAI-compatible client.
+    """Return an OpenAI-compatible client built from current env vars.
 
-    Automatically uses OPENAI_BASE_URL if set (e.g. for Qwen).
+    Automatically uses OPENAI_BASE_URL if set (e.g. for Qwen/DashScope).
     Raises EnvironmentError if OPENAI_API_KEY is missing.
     """
     api_key = os.getenv("OPENAI_API_KEY")
