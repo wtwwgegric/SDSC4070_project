@@ -1,0 +1,8 @@
+streamlit
+openai
+PyPDF2
+langchain
+chromadb
+requests
+python-dotenv
+tqdm
