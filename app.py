@@ -40,8 +40,9 @@ _defaults = {
     "cover_letter": "",
     "interview_session": None,
     "interview_scores": [],
+    "interview_history": [],   # list of {question, answer, score}
     "interview_current_q": "",
-    "interview_done": False,
+    "interview_phase": "idle", # idle | awaiting_answer | reviewing_feedback | done
     "candidate_name": "",
     "company_name": "",
 }
@@ -311,65 +312,101 @@ with tab_sim:
 
     analysis = st.session_state.get("jd_analysis")
     matches = st.session_state.get("match_results", [])
+    phase = st.session_state["interview_phase"]
+    session: InterviewSession | None = st.session_state.get("interview_session")
 
     if not analysis:
         st.info("➡️ Analyze a JD first (Tab 1).")
     else:
         col_start, col_reset = st.columns([1, 1])
         with col_start:
-            if st.button("▶ Start / Resume Interview", type="primary"):
-                if st.session_state["interview_session"] is None:
-                    st.session_state["interview_session"] = InterviewSession(
-                        jd_analysis=analysis,
-                        match_results=matches or [],
-                    )
-                    st.session_state["interview_scores"] = []
-                    st.session_state["interview_done"] = False
-                    q = st.session_state["interview_session"].next_question()
-                    st.session_state["interview_current_q"] = q
-        with col_reset:
-            if st.button("🔄 Reset Interview"):
-                st.session_state["interview_session"] = None
+            if phase == "idle" and st.button("▶ Start Interview", type="primary"):
+                sess = InterviewSession(jd_analysis=analysis, match_results=matches or [])
+                st.session_state["interview_session"] = sess
                 st.session_state["interview_scores"] = []
-                st.session_state["interview_current_q"] = ""
-                st.session_state["interview_done"] = False
+                st.session_state["interview_history"] = []
+                q = sess.next_question()
+                st.session_state["interview_current_q"] = q
+                st.session_state["interview_phase"] = "awaiting_answer"
+                st.rerun()
+        with col_reset:
+            if phase != "idle" and st.button("🔄 Reset Interview"):
+                for k in ("interview_session", "interview_scores", "interview_history",
+                          "interview_current_q"):
+                    st.session_state[k] = [] if k.endswith("s") or k.endswith("y") else None if k == "interview_session" else ""
+                st.session_state["interview_phase"] = "idle"
                 st.rerun()
 
-        session: InterviewSession | None = st.session_state.get("interview_session")
-        if session and not st.session_state["interview_done"]:
-            current_q = st.session_state.get("interview_current_q", "")
-            if current_q:
-                st.subheader("🎙️ Interviewer")
-                st.info(current_q)
+        # ── Chat history ────────────────────────────────────────────
+        history = st.session_state["interview_history"]
+        if history:
+            st.subheader("🗒️ Interview History")
+            for i, entry in enumerate(history):
+                with st.container(border=True):
+                    st.markdown(f"**Q{i+1}:** {entry['question']}")
+                    st.markdown(f"**Your answer:** {entry['answer']}")
+                    sc = entry["score"]
+                    with st.expander(f"📊 Score: {sc.overall:.1f}/5 — click to expand"):
+                        hc1, hc2, hc3, hc4 = st.columns(4)
+                        hc1.metric("Technical", f"{sc.technical_accuracy}/5")
+                        hc2.metric("Completeness", f"{sc.completeness}/5")
+                        hc3.metric("Clarity", f"{sc.clarity}/5")
+                        hc4.metric("Overall", f"{sc.overall:.1f}/5")
+                        st.caption(f"💬 {sc.feedback}")
+            st.divider()
 
-                user_answer = st.text_area("Your answer", key="user_answer_input", height=150)
-                if st.button("Submit Answer"):
-                    if not user_answer.strip():
-                        st.warning("Please type an answer before submitting.")
-                    else:
-                        with st.spinner("Evaluating…"):
-                            score = session.answer(user_answer)
-                            st.session_state["interview_scores"].append(score)
+        # ── Awaiting answer ──────────────────────────────────────────
+        if phase == "awaiting_answer" and session:
+            total = session._max_questions
+            done_count = len(history)
+            st.subheader(f"🎙️ Question {done_count + 1} of {total}")
+            st.info(st.session_state["interview_current_q"])
+            user_answer = st.text_area("Your answer", key="user_answer_input", height=150,
+                                       placeholder="Type your answer here…")
+            if st.button("Submit Answer", type="primary"):
+                if not user_answer.strip():
+                    st.warning("Please type an answer before submitting.")
+                else:
+                    with st.spinner("Evaluating your answer…"):
+                        score = session.answer(user_answer)
+                    entry = {
+                        "question": st.session_state["interview_current_q"],
+                        "answer": user_answer,
+                        "score": score,
+                    }
+                    st.session_state["interview_history"].append(entry)
+                    st.session_state["interview_scores"].append(score)
+                    st.session_state["interview_phase"] = "reviewing_feedback"
+                    st.rerun()
 
-                        # Show score for this round
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("Technical", f"{score.technical_accuracy}/5")
-                        c2.metric("Completeness", f"{score.completeness}/5")
-                        c3.metric("Clarity", f"{score.clarity}/5")
-                        c4.metric("Overall", f"{score.overall:.1f}/5")
-                        st.caption(f"💬 Feedback: {score.feedback}")
+        # ── Reviewing feedback ───────────────────────────────────────
+        elif phase == "reviewing_feedback" and session and history:
+            last = history[-1]
+            sc = last["score"]
+            rounds_done = len(history)
+            total = session._max_questions
 
-                        # Get next question
-                        next_q = session.next_question()
-                        if next_q:
-                            st.session_state["interview_current_q"] = next_q
-                            st.rerun()
-                        else:
-                            st.session_state["interview_done"] = True
-                            st.rerun()
+            st.subheader(f"📊 Feedback — Question {rounds_done} of {total}")
+            fc1, fc2, fc3, fc4 = st.columns(4)
+            fc1.metric("Technical", f"{sc.technical_accuracy}/5")
+            fc2.metric("Completeness", f"{sc.completeness}/5")
+            fc3.metric("Clarity", f"{sc.clarity}/5")
+            fc4.metric("Overall", f"{sc.overall:.1f}/5")
+            st.info(f"💬 {sc.feedback}")
 
-        # Show final report
-        if st.session_state["interview_done"] and session:
+            if rounds_done >= total:
+                if st.button("🏁 View Final Report", type="primary"):
+                    st.session_state["interview_phase"] = "done"
+                    st.rerun()
+            else:
+                if st.button("➡️ Next Question", type="primary"):
+                    next_q = session.next_question()
+                    st.session_state["interview_current_q"] = next_q
+                    st.session_state["interview_phase"] = "awaiting_answer"
+                    st.rerun()
+
+        # ── Final report ─────────────────────────────────────────────
+        elif phase == "done" and session:
             st.subheader("🏁 Interview Complete — Final Report")
             with st.spinner("Generating closing assessment…"):
                 report = session.final_report()

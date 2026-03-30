@@ -60,14 +60,15 @@ class InterviewSession:
             return ""
 
         instruction = (
-            "Ask the candidate one interview question based on the JD and their CV. "
-            "Vary the type: mix technical, behavioural (STAR format), and situational questions. "
-            "Ask ONLY the question — no preamble, no numbering."
+            "Ask your next interview question. "
+            "Follow the rules in your system prompt. "
+            "Output ONLY the question — no numbering, no preamble."
         )
         if self._questions_asked == 0:
             instruction = (
-                "Start the interview. Greet the candidate briefly (one sentence), then ask your "
-                "first question. Ask ONLY the greeting + question — keep it under 3 sentences total."
+                "Begin the interview with a warm one-sentence greeting, "
+                "then immediately ask your first behavioural question. "
+                "Keep the total response under 2 sentences."
             )
 
         self.chat_history.append({"role": "user", "content": instruction})
@@ -145,20 +146,24 @@ class InterviewSession:
     # ------------------------------------------------------------------
 
     def _build_system_prompt(self) -> str:
-        hard_skills = ", ".join(self.jd_analysis.get("hard_skills", [])[:8])
+        hard_skills = ", ".join(self.jd_analysis.get("hard_skills", [])[:6])
         role_summary = self.jd_analysis.get("summary", "a role")
-        topics = "; ".join(self.jd_analysis.get("interview_topics", [])[:6])
         cv_highlights = " | ".join(
-            m.get("suggested_rewrite", m.get("original", ""))[:120]
-            for m in (self.match_results or [])[:4]
+            m.get("suggested_rewrite", m.get("original", ""))[:100]
+            for m in (self.match_results or [])[:3]
         )
         return (
-            f"You are a professional interviewer conducting a structured interview for: {role_summary}.\n"
-            f"Key skills to probe: {hard_skills}.\n"
-            f"Suggested question themes: {topics}.\n"
-            f"Candidate CV highlights: {cv_highlights}.\n"
-            "Conduct the interview naturally. Ask one clear question at a time. "
-            f"Total questions: {self._max_questions}. Be encouraging but rigorous."
+            f"You are a friendly but professional interviewer for: {role_summary}.\n"
+            f"The role requires these skills: {hard_skills}.\n"
+            f"Candidate background highlights: {cv_highlights}.\n\n"
+            "STRICT RULES for asking questions:\n"
+            f"- Ask exactly {self._max_questions} questions total, one per turn.\n"
+            "- Keep each question SHORT — ideally under 20 words.\n"
+            "- Question mix: at least 3 behavioural (STAR format: 'Tell me about a time...'),"
+            " 1 motivational ('Why this role / company?'), 1 situational ('How would you handle...').\n"
+            "- Do NOT ask purely technical trivia or tool-specific syntax questions.\n"
+            "- Probe soft skills, problem-solving mindset, and past impact — not tool knowledge.\n"
+            "- Never repeat a topic already covered."
         )
 
     def _call_llm(self, messages: list[dict]) -> str:

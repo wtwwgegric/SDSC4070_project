@@ -50,8 +50,8 @@ def generate_cover_letter(
     if not match_results:
         raise ValueError("match_results is empty — run match_cv_to_jd() first")
 
-    client = _client()
-    model = model or os.getenv("OPENAI_MODEL", "qwen3.5-plus")
+    client = get_client()
+    model = model or get_model("gpt-4o-mini")
 
     hard_skills = ", ".join(jd_analysis.get("hard_skills", [])[:8])
     role_summary = jd_analysis.get("summary", "the role")
