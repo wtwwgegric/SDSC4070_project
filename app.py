@@ -2,7 +2,7 @@ import os
 import streamlit as st
 from career_copilot.pdf_loader import load_pdf_from_bytes, chunk_text
 from career_copilot.value_refiner import refine_value
-from SDSC4070_project.career_copilot.serper import fetch_company_culture
+from career_copilot.serper import fetch_company_culture
 
 
 st.set_page_config(page_title="Career Co-pilot — Demo", layout="wide")
