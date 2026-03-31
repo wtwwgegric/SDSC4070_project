@@ -16,7 +16,7 @@ from career_copilot.jd_analyzer import analyze_jd
 from career_copilot.cv_matcher import index_cv, match_cv_to_jd
 from career_copilot.value_refiner import refine_value
 from career_copilot.cover_letter import generate_cover_letter
-from career_copilot.interview_simulator import InterviewSession, generate_self_intro_draft
+from career_copilot.interview_simulator import InterviewSession, generate_self_intro_draft, prep_chat_response
 from career_copilot.serper import fetch_company_culture
 from career_copilot.eval_metrics import (
     keyword_hit_rate,
@@ -44,6 +44,8 @@ _defaults = {
     "interview_current_q": "",
     "interview_phase": "idle", # idle | self_intro | awaiting_answer | reviewing_feedback | done
     "interview_self_intro": "",
+    "interview_mode": "prep",          # "prep" | "test"
+    "prep_chat_history": [],            # list of {role, content}
     "candidate_name": "",
     "company_name": "",
 }
@@ -333,166 +335,264 @@ with tab_sim:
     if not analysis:
         st.info("➡️ Analyze a JD first (Tab 1).")
     else:
-        col_start, col_reset = st.columns([1, 1])
-        with col_start:
-            if phase == "idle" and st.button("▶ Start Interview", type="primary"):
-                st.session_state["interview_phase"] = "self_intro"
-                st.session_state["interview_self_intro"] = ""
-                st.rerun()
-        with col_reset:
-            if phase != "idle" and st.button("🔄 Reset Interview"):
-                st.session_state["interview_session"] = None
-                st.session_state["interview_scores"] = []
-                st.session_state["interview_history"] = []
-                st.session_state["interview_current_q"] = ""
-                st.session_state["interview_self_intro"] = ""
-                st.session_state["interview_phase"] = "idle"
-                st.rerun()
+        # ── Mode toggle ──────────────────────────────────────────────
+        mode = st.radio(
+            "Interview mode",
+            options=["🏋️ Prep Chat", "📝 Mock Test"],
+            index=0 if st.session_state["interview_mode"] == "prep" else 1,
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        st.session_state["interview_mode"] = "prep" if mode == "🏋️ Prep Chat" else "test"
+        st.divider()
 
-        # ── Self-introduction phase ────────────────────────────────────────
-        if phase == "self_intro":
-            st.subheader("👋 Step 1 — Prepare your self-introduction")
+        # ── PREP CHAT MODE ────────────────────────────────────────────
+        if st.session_state["interview_mode"] == "prep":
             st.markdown(
-                "A strong self-intro sets the tone. Generate a draft below, "
-                "then edit it to match your own voice before starting the interview."
+                "Chat freely with your AI career coach. Ask about potential questions, "
+                "get STAR talking-point suggestions, or share a draft answer for feedback."
             )
-            cv_text_for_intro = st.session_state.get("cv_text", "")
-
-            col_gen, _ = st.columns([1, 2])
-            with col_gen:
-                if st.button("✨ Generate draft", disabled=not cv_text_for_intro):
-                    with st.spinner("Drafting your self-introduction…"):
-                        try:
-                            draft = generate_self_intro_draft(cv_text_for_intro, analysis)
-                            st.session_state["interview_self_intro"] = draft
-                        except Exception as e:
-                            st.error(f"Could not generate draft: {e}")
-                if not cv_text_for_intro:
-                    st.caption("Upload your CV in the sidebar to enable auto-draft.")
-
-            intro_text = st.text_area(
-                "Your self-introduction (edit freely)",
-                value=st.session_state["interview_self_intro"],
-                height=160,
-                placeholder="Hi, I'm … I've been working on … and I'm excited about this role because …",
-                key="self_intro_textarea",
+            st.caption(
+                "💡 Try: *'What questions might they ask about my Python experience?'* "
+                "or *'How should I answer a weakness question?'* "
+                "or *'Is this a good answer: …'*"
             )
-            st.session_state["interview_self_intro"] = intro_text
 
-            if st.button("▶ Start Interview with this introduction", type="primary"):
-                sess = InterviewSession(
-                    jd_analysis=analysis,
-                    match_results=matches or [],
-                    self_intro=intro_text.strip(),
-                )
-                st.session_state["interview_session"] = sess
-                st.session_state["interview_scores"] = []
-                st.session_state["interview_history"] = []
-                q = sess.next_question()
-                st.session_state["interview_current_q"] = q
-                st.session_state["interview_phase"] = "awaiting_answer"
-                st.rerun()
+            # Self-intro reference
+            self_intro_txt = st.session_state.get("interview_self_intro", "")
+            if not self_intro_txt:
+                cv_for_intro = st.session_state.get("cv_text", "")
+                col_gen, col_skip = st.columns([1, 3])
+                with col_gen:
+                    if st.button("✨ Generate self-intro first", disabled=not cv_for_intro):
+                        with st.spinner("Drafting self-introduction…"):
+                            try:
+                                draft = generate_self_intro_draft(cv_for_intro, analysis)
+                                st.session_state["interview_self_intro"] = draft
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Could not generate draft: {e}")
+                if not cv_for_intro:
+                    st.caption("Upload CV in the sidebar to enable auto self-intro.")
+            else:
+                with st.expander("📌 Your Self-Introduction (click to read/edit)", expanded=False):
+                    edited = st.text_area(
+                        "Edit your intro",
+                        value=self_intro_txt,
+                        height=120,
+                        key="prep_intro_edit",
+                        label_visibility="collapsed",
+                    )
+                    if edited != self_intro_txt:
+                        st.session_state["interview_self_intro"] = edited
 
-        # ── Chat history ────────────────────────────────────────────
-        history = st.session_state["interview_history"]
-        if history:
-            st.subheader("🗒️ Interview History")
-            for i, entry in enumerate(history):
-                with st.container(border=True):
-                    st.markdown(f"**Q{i+1}:** {entry['question']}")
-                    st.markdown(f"**Your answer:** {entry['answer']}")
-                    sc = entry["score"]
-                    with st.expander(f"📊 Score: {sc.overall:.1f}/5 — click to expand"):
-                        hc1, hc2, hc3, hc4 = st.columns(4)
-                        hc1.metric("Technical", f"{sc.technical_accuracy}/5")
-                        hc2.metric("Completeness", f"{sc.completeness}/5")
-                        hc3.metric("Clarity", f"{sc.clarity}/5")
-                        hc4.metric("Overall", f"{sc.overall:.1f}/5")
-                        st.caption(f"💬 {sc.feedback}")
             st.divider()
 
-        # ── Awaiting answer ──────────────────────────────────────────
-        if phase == "awaiting_answer" and session:
-            total = session._max_questions
-            done_count = len(history)
-            st.subheader(f"🎙️ Question {done_count + 1} of {total}")
-            st.info(st.session_state["interview_current_q"])
-            user_answer = st.text_area("Your answer", key="user_answer_input", height=150,
-                                       placeholder="Type your answer here…")
-            if st.button("Submit Answer", type="primary"):
-                if not user_answer.strip():
-                    st.warning("Please type an answer before submitting.")
-                else:
-                    with st.spinner("Evaluating your answer…"):
-                        score = session.answer(user_answer)
-                    entry = {
-                        "question": st.session_state["interview_current_q"],
-                        "answer": user_answer,
-                        "score": score,
-                    }
-                    st.session_state["interview_history"].append(entry)
-                    st.session_state["interview_scores"].append(score)
-                    st.session_state["interview_phase"] = "reviewing_feedback"
+            # Chat history display
+            prep_history = st.session_state["prep_chat_history"]
+            for msg in prep_history:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+
+            # Chat input
+            user_msg = st.chat_input("Ask your career coach…")
+            if user_msg:
+                st.session_state["prep_chat_history"].append(
+                    {"role": "user", "content": user_msg}
+                )
+                with st.chat_message("user"):
+                    st.markdown(user_msg)
+                with st.chat_message("assistant"):
+                    with st.spinner("Thinking…"):
+                        try:
+                            reply = prep_chat_response(
+                                user_message=user_msg,
+                                chat_history=prep_history[:-1],  # exclude the one just appended
+                                jd_analysis=analysis,
+                                cv_text=st.session_state.get("cv_text", ""),
+                                self_intro=st.session_state.get("interview_self_intro", ""),
+                            )
+                        except Exception as e:
+                            reply = f"⚠️ Error: {e}"
+                    st.markdown(reply)
+                st.session_state["prep_chat_history"].append(
+                    {"role": "assistant", "content": reply}
+                )
+
+            if prep_history and st.button("🗑️ Clear chat"):
+                st.session_state["prep_chat_history"] = []
+                st.rerun()
+
+        # ── MOCK TEST MODE ────────────────────────────────────────────
+        else:
+            col_start, col_reset = st.columns([1, 1])
+            with col_start:
+                if phase == "idle" and st.button("▶ Start Interview", type="primary"):
+                    st.session_state["interview_phase"] = "self_intro"
+                    st.session_state["interview_self_intro"] = ""
+                    st.rerun()
+            with col_reset:
+                if phase != "idle" and st.button("🔄 Reset Interview"):
+                    st.session_state["interview_session"] = None
+                    st.session_state["interview_scores"] = []
+                    st.session_state["interview_history"] = []
+                    st.session_state["interview_current_q"] = ""
+                    st.session_state["interview_self_intro"] = ""
+                    st.session_state["interview_phase"] = "idle"
                     st.rerun()
 
-        # ── Reviewing feedback ───────────────────────────────────────
-        elif phase == "reviewing_feedback" and session and history:
-            last = history[-1]
-            sc = last["score"]
-            rounds_done = len(history)
-            total = session._max_questions
+            # ── Self-introduction phase ────────────────────────────────────────
+            if phase == "self_intro":
+                st.subheader("👋 Step 1 — Prepare your self-introduction")
+                st.markdown(
+                    "A strong self-intro sets the tone. Generate a draft below, "
+                    "then edit it to match your own voice before starting the interview."
+                )
+                cv_text_for_intro = st.session_state.get("cv_text", "")
 
-            st.subheader(f"📊 Feedback — Question {rounds_done} of {total}")
-            fc1, fc2, fc3, fc4 = st.columns(4)
-            fc1.metric("Technical", f"{sc.technical_accuracy}/5")
-            fc2.metric("Completeness", f"{sc.completeness}/5")
-            fc3.metric("Clarity", f"{sc.clarity}/5")
-            fc4.metric("Overall", f"{sc.overall:.1f}/5")
-            st.info(f"💬 {sc.feedback}")
+                col_gen, _ = st.columns([1, 2])
+                with col_gen:
+                    if st.button("✨ Generate draft", disabled=not cv_text_for_intro):
+                        with st.spinner("Drafting your self-introduction…"):
+                            try:
+                                draft = generate_self_intro_draft(cv_text_for_intro, analysis)
+                                st.session_state["interview_self_intro"] = draft
+                            except Exception as e:
+                                st.error(f"Could not generate draft: {e}")
+                    if not cv_text_for_intro:
+                        st.caption("Upload your CV in the sidebar to enable auto-draft.")
 
-            if rounds_done >= total:
-                if st.button("🏁 View Final Report", type="primary"):
-                    st.session_state["interview_phase"] = "done"
-                    st.rerun()
-            else:
-                if st.button("➡️ Next Question", type="primary"):
-                    next_q = session.next_question()
-                    st.session_state["interview_current_q"] = next_q
+                intro_text = st.text_area(
+                    "Your self-introduction (edit freely)",
+                    value=st.session_state["interview_self_intro"],
+                    height=160,
+                    placeholder="Hi, I'm … I've been working on … and I'm excited about this role because …",
+                    key="self_intro_textarea",
+                )
+                st.session_state["interview_self_intro"] = intro_text
+
+                if st.button("▶ Start Interview with this introduction", type="primary"):
+                    sess = InterviewSession(
+                        jd_analysis=analysis,
+                        match_results=matches or [],
+                        self_intro=intro_text.strip(),
+                    )
+                    st.session_state["interview_session"] = sess
+                    st.session_state["interview_scores"] = []
+                    st.session_state["interview_history"] = []
+                    q = sess.next_question()
+                    st.session_state["interview_current_q"] = q
                     st.session_state["interview_phase"] = "awaiting_answer"
                     st.rerun()
 
-        # ── Final report ─────────────────────────────────────────────
-        elif phase == "done" and session:
-            st.subheader("🏁 Interview Complete — Final Report")
-            with st.spinner("Generating closing assessment…"):
-                report = session.final_report()
+            # ── Persistent self-intro reference panel ───────────────────
+            if phase in ("awaiting_answer", "reviewing_feedback", "done"):
+                self_intro_text = st.session_state.get("interview_self_intro", "")
+                if self_intro_text:
+                    with st.expander("📌 Your Self-Introduction (for reference)", expanded=False):
+                        st.info(self_intro_text)
+                    st.divider()
 
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Avg Technical", f"{report['avg_technical_accuracy']:.1f}/5")
-            col2.metric("Avg Completeness", f"{report['avg_completeness']:.1f}/5")
-            col3.metric("Avg Clarity", f"{report['avg_clarity']:.1f}/5")
-            col4.metric("Avg Overall", f"{report['avg_overall']:.1f}/5")
+            # ── Chat history ────────────────────────────────────────────
+            history = st.session_state["interview_history"]
+            if history:
+                st.subheader("🗒️ Interview History")
+                for i, entry in enumerate(history):
+                    with st.container(border=True):
+                        st.markdown(f"**Q{i+1}:** {entry['question']}")
+                        st.markdown(f"**Your answer:** {entry['answer']}")
+                        sc = entry["score"]
+                        with st.expander(f"📊 Score: {sc.overall:.1f}/5 — click to expand"):
+                            hc1, hc2, hc3, hc4 = st.columns(4)
+                            hc1.metric("Technical", f"{sc.technical_accuracy}/5")
+                            hc2.metric("Completeness", f"{sc.completeness}/5")
+                            hc3.metric("Clarity", f"{sc.clarity}/5")
+                            hc4.metric("Overall", f"{sc.overall:.1f}/5")
+                            st.caption(f"💬 {sc.feedback}")
+                st.divider()
 
-            st.divider()
-            st.subheader("📈 Score Progression")
-            scores = st.session_state["interview_scores"]
-            if scores:
-                chart_data = pd.DataFrame(rubric_summary(scores)).set_index("Round")
-                st.line_chart(chart_data)
+            # ── Awaiting answer ──────────────────────────────────────────
+            if phase == "awaiting_answer" and session:
+                total = session._max_questions
+                done_count = len(history)
+                st.subheader(f"🎙️ Question {done_count + 1} of {total}")
+                st.info(st.session_state["interview_current_q"])
+                user_answer = st.text_area("Your answer", key="user_answer_input", height=150,
+                                           placeholder="Type your answer here…")
+                if st.button("Submit Answer", type="primary"):
+                    if not user_answer.strip():
+                        st.warning("Please type an answer before submitting.")
+                    else:
+                        with st.spinner("Evaluating your answer…"):
+                            score = session.answer(user_answer)
+                        entry = {
+                            "question": st.session_state["interview_current_q"],
+                            "answer": user_answer,
+                            "score": score,
+                        }
+                        st.session_state["interview_history"].append(entry)
+                        st.session_state["interview_scores"].append(score)
+                        st.session_state["interview_phase"] = "reviewing_feedback"
+                        st.rerun()
 
-            st.divider()
-            st.subheader("💬 Closing Assessment")
-            st.write(report.get("closing_assessment", ""))
+            # ── Reviewing feedback ───────────────────────────────────────
+            elif phase == "reviewing_feedback" and session and history:
+                last = history[-1]
+                sc = last["score"]
+                rounds_done = len(history)
+                total = session._max_questions
 
-            with st.expander("📊 Per-round breakdown"):
-                for r in report.get("per_round", []):
-                    st.markdown(
-                        f"**Round {r['round']}** — "
-                        f"Technical: {r['technical_accuracy']}, "
-                        f"Completeness: {r['completeness']}, "
-                        f"Clarity: {r['clarity']}, "
-                        f"Overall: {r['overall']}"
-                    )
-                    st.caption(f"Q: {r['question']}")
-                    st.caption(f"Feedback: {r['feedback']}")
-                    st.write("---")
+                st.subheader(f"📊 Feedback — Question {rounds_done} of {total}")
+                fc1, fc2, fc3, fc4 = st.columns(4)
+                fc1.metric("Technical", f"{sc.technical_accuracy}/5")
+                fc2.metric("Completeness", f"{sc.completeness}/5")
+                fc3.metric("Clarity", f"{sc.clarity}/5")
+                fc4.metric("Overall", f"{sc.overall:.1f}/5")
+                st.info(f"💬 {sc.feedback}")
+
+                if rounds_done >= total:
+                    if st.button("🏁 View Final Report", type="primary"):
+                        st.session_state["interview_phase"] = "done"
+                        st.rerun()
+                else:
+                    if st.button("➡️ Next Question", type="primary"):
+                        next_q = session.next_question()
+                        st.session_state["interview_current_q"] = next_q
+                        st.session_state["interview_phase"] = "awaiting_answer"
+                        st.rerun()
+
+            # ── Final report ─────────────────────────────────────────────
+            elif phase == "done" and session:
+                st.subheader("🏁 Interview Complete — Final Report")
+                with st.spinner("Generating closing assessment…"):
+                    report = session.final_report()
+
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Avg Technical", f"{report['avg_technical_accuracy']:.1f}/5")
+                col2.metric("Avg Completeness", f"{report['avg_completeness']:.1f}/5")
+                col3.metric("Avg Clarity", f"{report['avg_clarity']:.1f}/5")
+                col4.metric("Avg Overall", f"{report['avg_overall']:.1f}/5")
+
+                st.divider()
+                st.subheader("📈 Score Progression")
+                scores = st.session_state["interview_scores"]
+                if scores:
+                    chart_data = pd.DataFrame(rubric_summary(scores)).set_index("Round")
+                    st.line_chart(chart_data)
+
+                st.divider()
+                st.subheader("💬 Closing Assessment")
+                st.write(report.get("closing_assessment", ""))
+
+                with st.expander("📊 Per-round breakdown"):
+                    for r in report.get("per_round", []):
+                        st.markdown(
+                            f"**Round {r['round']}** — "
+                            f"Technical: {r['technical_accuracy']}, "
+                            f"Completeness: {r['completeness']}, "
+                            f"Clarity: {r['clarity']}, "
+                            f"Overall: {r['overall']}"
+                        )
+                        st.caption(f"Q: {r['question']}")
+                        st.caption(f"Feedback: {r['feedback']}")
+                        st.write("---")

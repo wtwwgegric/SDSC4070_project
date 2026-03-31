@@ -38,6 +38,13 @@ def fetch_company_culture(company_name: str, num_results: int = 5) -> List[Dict[
     payload = {"q": q, "num": num_results}
 
     resp = requests.post(SERPER_URL, json=payload, headers=headers, timeout=15)
+    if resp.status_code == 403:
+        raise EnvironmentError(
+            "Serper API returned 403 Forbidden. "
+            "Your SERPER_API_KEY may be invalid or the free quota is exhausted. "
+            "Please check your account at https://serper.dev — the key should be a "
+            "short alphanumeric string (not a hex hash)."
+        )
     resp.raise_for_status()
     data = resp.json()
 

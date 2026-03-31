@@ -67,6 +67,80 @@ def generate_self_intro_draft(
     return resp.choices[0].message.content.strip()
 
 
+def _build_prep_system_prompt(
+    jd_analysis: dict[str, Any],
+    cv_text: str,
+    self_intro: str,
+) -> str:
+    role_summary = jd_analysis.get("summary", "the target role")
+    hard_skills = ", ".join(jd_analysis.get("hard_skills", [])[:8])
+    soft_skills = ", ".join(jd_analysis.get("soft_skills", [])[:5])
+    interview_topics = "; ".join(jd_analysis.get("interview_topics", [])[:6])
+    cv_snippet = cv_text[:2500] if cv_text else "(CV not provided)"
+    intro_line = f"The candidate's self-introduction: {self_intro}\n" if self_intro else ""
+
+    return (
+        "You are a supportive and expert interview coach helping a candidate prepare for a job interview.\n\n"
+        f"ROLE CONTEXT:\n"
+        f"- Role summary: {role_summary}\n"
+        f"- Key hard skills required: {hard_skills}\n"
+        f"- Key soft skills required: {soft_skills}\n"
+        f"- Likely interview topics: {interview_topics}\n\n"
+        f"CANDIDATE BACKGROUND (from their CV):\n{cv_snippet}\n\n"
+        f"{intro_line}"
+        "YOUR COACHING STYLE:\n"
+        "- When the candidate asks about a question or topic, first briefly explain what the "
+        "interviewer is REALLY looking for (1–2 sentences).\n"
+        "- Then suggest a concrete STAR-structured talking point they could use, drawn from "
+        "their actual CV background above. Be specific — reference their real projects/experiences.\n"
+        "- If the candidate shares a draft answer, give honest, constructive feedback: what works, "
+        "what to add, what to cut, and how to make it more impactful.\n"
+        "- Keep responses concise and practical. Use bullet points where helpful.\n"
+        "- Never fabricate CV experiences. Only reference what is in the candidate's background.\n"
+        "- You may proactively suggest which interview topics the candidate should prioritise "
+        "based on the JD requirements."
+    )
+
+
+def prep_chat_response(
+    user_message: str,
+    chat_history: list[dict[str, str]],
+    jd_analysis: dict[str, Any],
+    cv_text: str = "",
+    self_intro: str = "",
+    model: str = None,
+) -> str:
+    """Generate a coaching reply in the prep chat.
+
+    Parameters
+    ----------
+    user_message  : the candidate's latest message
+    chat_history  : list of {"role": "user"|"assistant", "content": str} — prior turns only
+    jd_analysis   : output of analyze_jd()
+    cv_text       : raw CV text for context
+    self_intro    : confirmed self-introduction text
+    model         : model override
+
+    Returns
+    -------
+    str — the coach's reply
+    """
+    model = model or get_model("gpt-4o-mini")
+    system_prompt = _build_prep_system_prompt(jd_analysis, cv_text, self_intro)
+
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend(chat_history)
+    messages.append({"role": "user", "content": user_message})
+
+    resp = get_client().chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0.5,
+        max_tokens=600,
+    )
+    return resp.choices[0].message.content.strip()
+
+
 @dataclass
 class InterviewSession:
     jd_analysis: dict[str, Any]
