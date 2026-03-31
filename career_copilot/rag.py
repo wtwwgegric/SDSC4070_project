@@ -7,7 +7,7 @@ from career_copilot.config import get_client
 # Embedding model — configurable via OPENAI_EMBED_MODEL env var.
 # OpenAI default  : text-embedding-3-small
 # DashScope/Qwen  : text-embedding-v3
-_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
+_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-v4")
 
 
 def _embed_texts(texts: List[str]) -> List[List[float]]:
