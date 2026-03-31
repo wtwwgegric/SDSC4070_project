@@ -27,6 +27,7 @@ from career_copilot.eval_metrics import (
     rubric_summary,
 )
 from career_copilot.agent import run_pipeline
+from career_copilot.job_search import search_jobs, fetch_jd_from_url
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -53,6 +54,7 @@ _defaults = {
     "prep_chat_summary": "",
     "candidate_name": "",
     "company_name": "",
+    "job_search_results": [],
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -67,21 +69,41 @@ with st.sidebar:
     st.divider()
 
     st.subheader("1. Upload your CV")
-    uploaded_cv = st.file_uploader("PDF only", type=["pdf"], key="cv_uploader")
-    if uploaded_cv:
-        raw_bytes = uploaded_cv.read()
-        with st.spinner("Extracting text from PDF…"):
-            extracted = load_pdf_from_bytes(raw_bytes)
-            st.session_state["cv_text"] = extracted
-            st.session_state["cv_indexed"] = False
-        if extracted:
-            st.success(f"Extracted {len(extracted)} characters")
-        else:
-            st.error(
-                "Could not extract text from this PDF. "
-                "It may be a scanned/image-only file. "
-                "Please use a text-based PDF or copy-paste your CV text manually."
-            )
+    cv_input_mode = st.radio(
+        "CV input method", ["Upload PDF", "Paste text"],
+        horizontal=True, label_visibility="collapsed",
+    )
+    if cv_input_mode == "Upload PDF":
+        uploaded_cv = st.file_uploader("PDF only", type=["pdf"], key="cv_uploader")
+        if uploaded_cv:
+            raw_bytes = uploaded_cv.read()
+            with st.spinner("Extracting text from PDF…"):
+                extracted = load_pdf_from_bytes(raw_bytes)
+                st.session_state["cv_text"] = extracted
+                st.session_state["cv_indexed"] = False
+            if extracted:
+                st.success(f"Extracted {len(extracted)} characters")
+            else:
+                st.error(
+                    "Could not extract text from this PDF. "
+                    "It may be a scanned/image-only file. "
+                    "Please switch to 'Paste text' and paste your CV manually."
+                )
+    else:
+        pasted_cv = st.text_area(
+            "Paste your CV (plain text or Markdown)",
+            height=220,
+            key="cv_paste_area",
+            placeholder="Paste your full CV here…",
+        )
+        if st.button("✅ Use this CV text", key="cv_paste_confirm"):
+            cleaned = pasted_cv.strip()
+            if cleaned:
+                st.session_state["cv_text"] = cleaned
+                st.session_state["cv_indexed"] = False
+                st.success(f"CV text saved ({len(cleaned)} chars)")
+            else:
+                st.warning("Nothing to save — paste your CV first.")
 
     if st.session_state["cv_text"]:
         st.caption(f"CV loaded ✅ ({len(st.session_state['cv_text'])} chars)")
@@ -149,9 +171,103 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # Main area — 4 tabs
 # ---------------------------------------------------------------------------
-tab_jd, tab_cv, tab_cl, tab_sim = st.tabs(
-    ["📋 JD Analyzer", "🎯 CV Matcher", "✉️ Cover Letter", "🎤 Interview Sim"]
+tab_search, tab_jd, tab_cv, tab_cl, tab_sim = st.tabs(
+    ["🔎 Job Search", "📋 JD Analyzer", "🎯 CV Matcher", "✉️ Cover Letter", "🎤 Interview Sim"]
 )
+
+# ============================================================
+# Tab 0 — Job Search
+# ============================================================
+with tab_search:
+    st.header("Job Search")
+    st.markdown(
+        "Search LinkedIn and/or Indeed for matching roles. "
+        "Click **Use this JD** on any result to send the description straight to the JD Analyzer."
+    )
+
+    s_col1, s_col2 = st.columns([2, 1])
+    with s_col1:
+        search_term = st.text_input(
+            "Job title / keywords",
+            placeholder="e.g. Data Analyst Intern",
+            key="job_search_term",
+        )
+    with s_col2:
+        search_location = st.text_input(
+            "Location",
+            placeholder="e.g. Hong Kong",
+            key="job_search_location",
+        )
+
+    s_col3, s_col4 = st.columns([2, 1])
+    with s_col3:
+        search_sites = st.multiselect(
+            "Job boards",
+            options=["indeed", "linkedin"],
+            default=["indeed"],
+            help="Indeed is more reliable; LinkedIn may rate-limit after ~10 results.",
+        )
+    with s_col4:
+        search_results_n = st.slider("Results per site", min_value=5, max_value=20, value=10)
+
+    # Country selector for Indeed (must match JobSpy's valid country list)
+    _INDEED_COUNTRIES = [
+        "hong kong", "usa", "uk", "australia", "canada", "singapore", "china",
+        "india", "japan", "south korea", "taiwan", "malaysia", "philippines",
+        "thailand", "vietnam", "indonesia", "new zealand", "germany", "france",
+        "netherlands", "sweden", "switzerland", "ireland", "uae", "saudi arabia",
+        "qatar", "south africa", "brazil", "mexico", "worldwide",
+    ]
+    search_country = st.selectbox(
+        "Country (for Indeed filtering)",
+        options=[""] + _INDEED_COUNTRIES,
+        index=1,   # default: hong kong
+        format_func=lambda x: x.title() if x else "— auto-detect from location —",
+        help="Required for Indeed to return results from the correct country.",
+        key="job_search_country",
+    )
+
+    if st.button("🔍 Search Jobs", type="primary", disabled=not search_term):
+        if not search_sites:
+            st.warning("Select at least one job board.")
+        else:
+            with st.spinner(f"Searching {', '.join(search_sites)}… (LinkedIn may take ~20 s)"):
+                try:
+                    results = search_jobs(
+                        search_term=search_term,
+                        location=search_location,
+                        sites=search_sites,
+                        results_wanted=search_results_n,
+                        country_indeed=st.session_state.get("job_search_country", ""),
+                    )
+                    st.session_state["job_search_results"] = results
+                    if not results:
+                        st.warning("No results found. Try different keywords or location.")
+                except Exception as e:
+                    st.error(f"Search failed: {e}")
+
+    results = st.session_state["job_search_results"]
+    if results:
+        st.success(f"Found {len(results)} job(s)")
+        for i, job in enumerate(results):
+            site_badge = f"`{job['site'].upper()}`"
+            with st.container(border=True):
+                h_col, b_col = st.columns([4, 1])
+                with h_col:
+                    st.markdown(f"**{job['title']}** — {job['company']}")
+                    meta_parts = [p for p in [job['location'], job['job_type'], job['date_posted']] if p and p != 'nan']
+                    st.caption("  ·  ".join(meta_parts) + f"  ·  {site_badge}")
+                    if job.get("job_url"):
+                        st.markdown(f"[View original posting]({job['job_url']})")
+                with b_col:
+                    if st.button("📋 Use this JD", key=f"use_jd_{i}"):
+                        st.session_state["jd_input_text"] = job["description"]
+                        st.session_state["company_name"] = job["company"]
+                        st.toast("✅ JD loaded — switch to the 📋 JD Analyzer tab and click Analyze JD.")
+                        st.rerun()
+                if job.get("description"):
+                    with st.expander("Preview description"):
+                        st.text(job["description"][:800] + ("…" if len(job["description"]) > 800 else ""))
 
 # ============================================================
 # Tab 1 — JD Analyzer
@@ -159,9 +275,30 @@ tab_jd, tab_cv, tab_cl, tab_sim = st.tabs(
 with tab_jd:
     st.header("Job Description Analyzer")
     st.markdown(
-        "Paste a JD below. The agent will extract hard skills, soft skills, "
-        "decode corporate jargon, and suggest interview preparation topics."
+        "Paste a JD below, fetch it from a URL, or pick one from the **Job Search** tab. "
+        "The agent will extract hard skills, soft skills, decode jargon, and suggest prep topics."
     )
+
+    # ── URL fetch ──────────────────────────────────────────────────────────
+    with st.expander("⬇️ Fetch JD from a LinkedIn or Indeed URL", expanded=False):
+        url_col, btn_col = st.columns([4, 1])
+        with url_col:
+            jd_url = st.text_input(
+                "Job posting URL",
+                placeholder="https://www.linkedin.com/jobs/view/… or https://www.indeed.com/viewjob?…",
+                key="jd_url_input",
+                label_visibility="collapsed",
+            )
+        with btn_col:
+            fetch_clicked = st.button("⬇️ Fetch", disabled=not jd_url)
+        if fetch_clicked and jd_url:
+            with st.spinner("Fetching job description…"):
+                try:
+                    fetched = fetch_jd_from_url(jd_url)
+                    st.session_state["jd_input_text"] = fetched
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e))
 
     jd_input = st.text_area(
         "Paste Job Description here",
@@ -337,6 +474,7 @@ with tab_cl:
                         match_results=matches,
                         candidate_name=candidate,
                         company_name=company,
+                        cv_text=st.session_state.get("cv_text", ""),
                     )
                     st.session_state["cover_letter"] = letter
                 except Exception as e:
