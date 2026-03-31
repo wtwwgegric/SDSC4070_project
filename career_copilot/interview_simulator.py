@@ -102,6 +102,40 @@ def _build_prep_system_prompt(
     )
 
 
+def prep_chat_summary(
+    chat_history: list[dict[str, str]],
+    jd_analysis: dict[str, Any],
+    model: str = None,
+) -> str:
+    """Generate a bullet-point summary of what was discussed in the prep chat session.
+
+    Does NOT modify chat_history. Useful as a study reference after a coaching session.
+    """
+    model = model or get_model("gpt-4o-mini")
+    role_summary = jd_analysis.get("summary", "the target role")
+
+    conversation_text = "\n".join(
+        f"{m['role'].upper()}: {m['content']}" for m in chat_history
+    )
+    prompt = (
+        f"The following is a career coaching conversation for a candidate preparing for: {role_summary}\n\n"
+        f"{conversation_text}\n\n"
+        "Summarise this coaching session as a concise study reference. "
+        "Use bullet points. Cover:\n"
+        "- Which interview topics / questions were discussed\n"
+        "- Key talking points or STAR examples the candidate should remember\n"
+        "- Any improvement advice given\n"
+        "Keep it under 200 words. Do not repeat the conversation verbatim."
+    )
+    resp = get_client().chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        max_tokens=400,
+    )
+    return resp.choices[0].message.content.strip()
+
+
 def prep_chat_response(
     user_message: str,
     chat_history: list[dict[str, str]],

@@ -1,7 +1,7 @@
 """Simple Serper.dev wrapper to fetch company culture hints.
 
 This module expects a Serper API key in the environment variable `SERPER_API_KEY`.
-Default endpoint is `https://google.serper.dev/search` but can be overridden with
+Default endpoint is `https://serpapi.com/search?engine=google` but can be overridden with
 `SERPER_URL` env var.
 """
 import os
@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 _ENV_PATH = os.path.join(os.path.dirname(__file__), "..", ".env")
 load_dotenv(dotenv_path=_ENV_PATH, override=True)
 
-SERPER_URL = os.getenv("SERPER_URL", "https://google.serper.dev/search")
+SERPER_URL = os.getenv("SERPER_URL", "https://serpapi.com/search?engine=google")
 
 
 def _get_api_key() -> str:

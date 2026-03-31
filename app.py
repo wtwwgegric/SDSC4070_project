@@ -16,13 +16,17 @@ from career_copilot.jd_analyzer import analyze_jd
 from career_copilot.cv_matcher import index_cv, match_cv_to_jd
 from career_copilot.value_refiner import refine_value
 from career_copilot.cover_letter import generate_cover_letter
-from career_copilot.interview_simulator import InterviewSession, generate_self_intro_draft, prep_chat_response
+from career_copilot.interview_simulator import (
+    InterviewSession, generate_self_intro_draft, prep_chat_response, prep_chat_summary
+)
 from career_copilot.serper import fetch_company_culture
 from career_copilot.eval_metrics import (
     keyword_hit_rate,
     keyword_hit_rate_improvement,
+    hallucination_check,
     rubric_summary,
 )
+from career_copilot.agent import run_pipeline
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -46,6 +50,7 @@ _defaults = {
     "interview_self_intro": "",
     "interview_mode": "prep",          # "prep" | "test"
     "prep_chat_history": [],            # list of {role, content}
+    "prep_chat_summary": "",
     "candidate_name": "",
     "company_name": "",
 }
@@ -91,7 +96,37 @@ with st.sidebar:
     )
 
     st.divider()
-    st.subheader("3. Company culture lookup")
+    st.subheader("3. ⚡ Full Pipeline (one-click)")
+    st.caption("Runs JD analysis → CV matching → cover letter in sequence.")
+    if st.button("🚀 Run Full Pipeline", use_container_width=True):
+        jd_text = st.session_state.get("jd_input_text", "").strip()
+        cv_text = st.session_state.get("cv_text", "").strip()
+        if not jd_text:
+            st.warning("Paste a JD in Tab 1 first.")
+        elif not cv_text:
+            st.warning("Upload your CV first.")
+        else:
+            with st.spinner("Running full pipeline… (this may take ~30 s)"):
+                try:
+                    result = run_pipeline(
+                        jd_text=jd_text,
+                        cv_text=cv_text,
+                        candidate_name=st.session_state.get("candidate_name") or "the candidate",
+                        company_name=st.session_state.get("company_name") or "your company",
+                    )
+                    if result.get("error"):
+                        st.error(result["error"])
+                    else:
+                        st.session_state["jd_analysis"] = result.get("jd_analysis")
+                        st.session_state["match_results"] = result.get("match_results")
+                        st.session_state["cv_indexed"] = True
+                        st.session_state["cover_letter"] = result.get("cover_letter", "")
+                        st.success("Pipeline complete! Check all tabs.")
+                except Exception as e:
+                    st.error(f"Pipeline failed: {e}")
+
+    st.divider()
+    st.subheader("4. Company culture lookup")
     company_query = st.text_input("Company name", key="culture_company")
     if st.button("🔍 Fetch culture hints") and company_query:
         try:
@@ -310,6 +345,22 @@ with tab_cl:
         if st.session_state.get("cover_letter"):
             st.subheader("📄 Your Cover Letter")
             st.write(st.session_state["cover_letter"])
+
+            # Hallucination / grounding check
+            cv_text_for_check = st.session_state.get("cv_text", "")
+            if cv_text_for_check:
+                hc = hallucination_check(cv_text_for_check, st.session_state["cover_letter"])
+                ratio = hc["traceability_ratio"]
+                hcol1, hcol2, hcol3 = st.columns(3)
+                hcol1.metric("📎 Grounding score", f"{ratio:.0%}",
+                             help="Fraction of phrases traceable back to your CV. Higher = less hallucination.")
+                hcol2.metric("Traceable phrases", hc["traceable"])
+                hcol3.metric("Total phrases checked", hc["total_phrases"])
+                if hc.get("untraceable_samples"):
+                    with st.expander("⚠️ Phrases not directly matched in CV (review manually)"):
+                        for s in hc["untraceable_samples"]:
+                            st.caption(f"- {s}")
+
             st.download_button(
                 "⬇️ Download as .txt",
                 data=st.session_state["cover_letter"],
@@ -419,9 +470,29 @@ with tab_sim:
                     {"role": "assistant", "content": reply}
                 )
 
-            if prep_history and st.button("🗑️ Clear chat"):
-                st.session_state["prep_chat_history"] = []
-                st.rerun()
+            if prep_history:
+                btn_col1, btn_col2 = st.columns([1, 1])
+                with btn_col1:
+                    if st.button("📋 Summarise this session"):
+                        with st.spinner("Summarising…"):
+                            try:
+                                summary = prep_chat_summary(
+                                    chat_history=prep_history,
+                                    jd_analysis=analysis,
+                                )
+                                st.session_state["prep_chat_summary"] = summary
+                            except Exception as e:
+                                st.error(f"Could not summarise: {e}")
+                with btn_col2:
+                    if st.button("🗑️ Clear chat"):
+                        st.session_state["prep_chat_history"] = []
+                        st.session_state["prep_chat_summary"] = ""
+                        st.rerun()
+
+                summary_text = st.session_state.get("prep_chat_summary", "")
+                if summary_text:
+                    with st.expander("📋 Session Summary (save this for your notes)", expanded=True):
+                        st.markdown(summary_text)
 
         # ── MOCK TEST MODE ────────────────────────────────────────────
         else:
