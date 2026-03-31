@@ -1,3 +1,4 @@
+import re
 from io import BytesIO
 from typing import List
 
@@ -53,16 +54,64 @@ def load_pdf_from_bytes(pdf_bytes: bytes) -> str:
 
 
 def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
-    """Simple sliding window chunker by characters."""
+    """Paragraph-aware chunker for CV text.
+
+    Strategy:
+    1. Split by blank lines to get natural paragraphs / CV sections.
+    2. Accumulate paragraphs into a chunk until size is reached.
+    3. Paragraphs that are themselves too long are split by sentence.
+    This produces chunks that align with job entries, bullet points, and
+    education blocks rather than cutting inside a sentence.
+    """
     if not text:
         return []
-    chunks = []
-    start = 0
-    text_len = len(text)
-    while start < text_len:
-        end = min(start + chunk_size, text_len)
-        chunks.append(text[start:end])
-        if end == text_len:
-            break
-        start = max(0, end - overlap)
+
+    # Step 1: split into paragraphs on one or more blank lines
+    raw_paras = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip()]
+
+    def _split_long_para(para: str) -> List[str]:
+        """Split a paragraph that exceeds chunk_size by sentences."""
+        sentences = re.split(r'(?<=[.!?])\s+', para)
+        parts: List[str] = []
+        current = ""
+        for s in sentences:
+            candidate = (current + " " + s).strip() if current else s
+            if len(candidate) <= chunk_size:
+                current = candidate
+            else:
+                if current:
+                    parts.append(current)
+                current = s
+        if current:
+            parts.append(current)
+        return parts or [para]
+
+    chunks: List[str] = []
+    current = ""
+
+    for para in raw_paras:
+        # If the paragraph fits alongside what we already have, merge
+        candidate = (current + "\n\n" + para).strip() if current else para
+        if len(candidate) <= chunk_size:
+            current = candidate
+        else:
+            # Save current chunk
+            if current:
+                chunks.append(current)
+            # Handle oversized paragraph
+            if len(para) > chunk_size:
+                sub_parts = _split_long_para(para)
+                chunks.extend(sub_parts[:-1])
+                current = sub_parts[-1]
+            else:
+                current = para
+
+    if current:
+        chunks.append(current)
+
+    # Fallback: if nothing produced (e.g. no blank lines at all), use sliding window
+    if not chunks:
+        step = max(1, chunk_size - overlap)
+        chunks = [text[i:i + chunk_size] for i in range(0, len(text), step)]
+
     return chunks

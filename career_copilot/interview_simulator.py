@@ -34,10 +34,44 @@ class RubricScore:
     answer: str
 
 
+def generate_self_intro_draft(
+    cv_text: str,
+    jd_analysis: dict[str, Any],
+    model: str = None,
+) -> str:
+    """Generate a tailored 60-second self-introduction draft.
+
+    The draft is based on the candidate's own CV text and the target JD so they
+    can practise or refine it before the interview starts.
+    """
+    role_summary = jd_analysis.get("summary", "the target role")
+    hard_skills = ", ".join(jd_analysis.get("hard_skills", [])[:6])
+    model = model or get_model("gpt-4o-mini")
+
+    prompt = (
+        "Write a natural, first-person '60-second self-introduction' for a job interview.\n"
+        "Base it ONLY on the CV text provided — do not invent facts.\n"
+        f"Target role context: {role_summary}\n"
+        f"Skills to highlight: {hard_skills}\n\n"
+        f"CV text:\n{cv_text[:3000]}\n\n"
+        "Format: 3-4 short sentences. Start with the candidate's current status, "
+        "briefly mention 1-2 relevant past achievements, then state motivation for this role. "
+        "Use 'I' throughout. No bullet points."
+    )
+    resp = get_client().chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        max_tokens=250,
+    )
+    return resp.choices[0].message.content.strip()
+
+
 @dataclass
 class InterviewSession:
     jd_analysis: dict[str, Any]
     match_results: list[dict[str, Any]]
+    self_intro: str = ""                   # candidate's confirmed self-introduction
     model: str = field(default_factory=lambda: get_model("gpt-4o-mini"))
 
     # internal state
@@ -152,17 +186,22 @@ class InterviewSession:
             m.get("suggested_rewrite", m.get("original", ""))[:100]
             for m in (self.match_results or [])[:3]
         )
+        intro_context = (
+            f"The candidate introduced themselves as: {self.self_intro}\n"
+            if self.self_intro else ""
+        )
         return (
             f"You are a friendly but professional interviewer for: {role_summary}.\n"
             f"The role requires these skills: {hard_skills}.\n"
-            f"Candidate background highlights: {cv_highlights}.\n\n"
+            f"Candidate background highlights: {cv_highlights}.\n"
+            f"{intro_context}"
             "STRICT RULES for asking questions:\n"
             f"- Ask exactly {self._max_questions} questions total, one per turn.\n"
             "- Keep each question SHORT — ideally under 20 words.\n"
-            "- Question mix: at least 3 behavioural (STAR format: 'Tell me about a time...'),"
+            "- Question mix: at least 3 behavioural (STAR: 'Tell me about a time...'),"
             " 1 motivational ('Why this role / company?'), 1 situational ('How would you handle...').\n"
-            "- Do NOT ask purely technical trivia or tool-specific syntax questions.\n"
-            "- Probe soft skills, problem-solving mindset, and past impact — not tool knowledge.\n"
+            "- Do NOT ask technical trivia or tool-syntax questions.\n"
+            "- Probe mindset, soft skills, and past impact.\n"
             "- Never repeat a topic already covered."
         )
 

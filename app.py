@@ -16,7 +16,7 @@ from career_copilot.jd_analyzer import analyze_jd
 from career_copilot.cv_matcher import index_cv, match_cv_to_jd
 from career_copilot.value_refiner import refine_value
 from career_copilot.cover_letter import generate_cover_letter
-from career_copilot.interview_simulator import InterviewSession
+from career_copilot.interview_simulator import InterviewSession, generate_self_intro_draft
 from career_copilot.serper import fetch_company_culture
 from career_copilot.eval_metrics import (
     keyword_hit_rate,
@@ -42,7 +42,8 @@ _defaults = {
     "interview_scores": [],
     "interview_history": [],   # list of {question, answer, score}
     "interview_current_q": "",
-    "interview_phase": "idle", # idle | awaiting_answer | reviewing_feedback | done
+    "interview_phase": "idle", # idle | self_intro | awaiting_answer | reviewing_feedback | done
+    "interview_self_intro": "",
     "candidate_name": "",
     "company_name": "",
 }
@@ -200,10 +201,15 @@ with tab_cv:
         st.subheader("✨ Value Refiner")
         st.caption("Transform a 'dirty work' description into a polished CV bullet.")
         chunks = chunk_text(cv_text, chunk_size=1200, overlap=200)
+        def _chunk_label(i: int) -> str:
+            # Show the first non-empty line of the chunk for a meaningful preview
+            first_line = next((l.strip() for l in chunks[i].split("\n") if l.strip()), "")
+            return f"Chunk {i+1}: {first_line[:100]}{'…' if len(first_line) > 100 else ''}"
+
         sel = st.selectbox(
             "Select a CV chunk to refine",
-            options=list(range(min(10, len(chunks)))),
-            format_func=lambda i: f"Chunk {i+1}: {chunks[i][:90].strip()}…",
+            options=list(range(min(15, len(chunks)))),
+            format_func=_chunk_label,
         )
         manual_input = st.text_area("Or type a description manually", key="manual_refine")
         to_refine = manual_input.strip() or (chunks[sel] if chunks else "")
@@ -216,6 +222,15 @@ with tab_cv:
                     st.write(refined)
                 except Exception as e:
                     st.error(str(e))
+
+        st.divider()
+
+        # Show all CV chunks so user can verify quality
+        with st.expander(f"🔍 Preview all CV chunks ({len(chunks)} total)"):
+            for ci, ch in enumerate(chunks):
+                st.markdown(f"**Chunk {ci+1}**")
+                st.text(ch)
+                st.write("---")
 
         st.divider()
 
@@ -321,20 +336,61 @@ with tab_sim:
         col_start, col_reset = st.columns([1, 1])
         with col_start:
             if phase == "idle" and st.button("▶ Start Interview", type="primary"):
-                sess = InterviewSession(jd_analysis=analysis, match_results=matches or [])
+                st.session_state["interview_phase"] = "self_intro"
+                st.session_state["interview_self_intro"] = ""
+                st.rerun()
+        with col_reset:
+            if phase != "idle" and st.button("🔄 Reset Interview"):
+                st.session_state["interview_session"] = None
+                st.session_state["interview_scores"] = []
+                st.session_state["interview_history"] = []
+                st.session_state["interview_current_q"] = ""
+                st.session_state["interview_self_intro"] = ""
+                st.session_state["interview_phase"] = "idle"
+                st.rerun()
+
+        # ── Self-introduction phase ────────────────────────────────────────
+        if phase == "self_intro":
+            st.subheader("👋 Step 1 — Prepare your self-introduction")
+            st.markdown(
+                "A strong self-intro sets the tone. Generate a draft below, "
+                "then edit it to match your own voice before starting the interview."
+            )
+            cv_text_for_intro = st.session_state.get("cv_text", "")
+
+            col_gen, _ = st.columns([1, 2])
+            with col_gen:
+                if st.button("✨ Generate draft", disabled=not cv_text_for_intro):
+                    with st.spinner("Drafting your self-introduction…"):
+                        try:
+                            draft = generate_self_intro_draft(cv_text_for_intro, analysis)
+                            st.session_state["interview_self_intro"] = draft
+                        except Exception as e:
+                            st.error(f"Could not generate draft: {e}")
+                if not cv_text_for_intro:
+                    st.caption("Upload your CV in the sidebar to enable auto-draft.")
+
+            intro_text = st.text_area(
+                "Your self-introduction (edit freely)",
+                value=st.session_state["interview_self_intro"],
+                height=160,
+                placeholder="Hi, I'm … I've been working on … and I'm excited about this role because …",
+                key="self_intro_textarea",
+            )
+            st.session_state["interview_self_intro"] = intro_text
+
+            if st.button("▶ Start Interview with this introduction", type="primary"):
+                sess = InterviewSession(
+                    jd_analysis=analysis,
+                    match_results=matches or [],
+                    self_intro=intro_text.strip(),
+                )
                 st.session_state["interview_session"] = sess
                 st.session_state["interview_scores"] = []
                 st.session_state["interview_history"] = []
                 q = sess.next_question()
                 st.session_state["interview_current_q"] = q
                 st.session_state["interview_phase"] = "awaiting_answer"
-                st.rerun()
-        with col_reset:
-            if phase != "idle" and st.button("🔄 Reset Interview"):
-                for k in ("interview_session", "interview_scores", "interview_history",
-                          "interview_current_q"):
-                    st.session_state[k] = [] if k.endswith("s") or k.endswith("y") else None if k == "interview_session" else ""
-                st.session_state["interview_phase"] = "idle"
                 st.rerun()
 
         # ── Chat history ────────────────────────────────────────────

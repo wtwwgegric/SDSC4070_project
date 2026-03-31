@@ -10,6 +10,8 @@ pip install -r ../requirements.txt
 
 ```bash
 export OPENAI_API_KEY=your_key_here
+
+source /Users/wantwa/SDSC4070/SDSC4070_project/.venv/bin/activate
 streamlit run app.py
 ```
 
