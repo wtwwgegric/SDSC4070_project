@@ -19,7 +19,7 @@ from career_copilot.cover_letter import generate_cover_letter
 from career_copilot.interview_simulator import (
     InterviewSession, generate_self_intro_draft, prep_chat_response, prep_chat_summary
 )
-from career_copilot.serper import fetch_company_culture
+from career_copilot.serper import fetch_company_culture, synthesize_culture_insights
 from career_copilot.eval_metrics import (
     keyword_hit_rate,
     keyword_hit_rate_improvement,
@@ -152,16 +152,20 @@ with st.sidebar:
     company_query = st.text_input("Company name", key="culture_company")
     if st.button("🔍 Fetch culture hints") and company_query:
         try:
-            with st.spinner("Querying Serper.dev…"):
-                hits = fetch_company_culture(company_query, num_results=5)
-            for h in hits:
-                if h.get("title"):
-                    st.markdown(f"**{h['title']}**")
-                if h.get("snippet"):
-                    st.write(h["snippet"])
-                if h.get("link"):
-                    st.caption(h["link"])
-                st.write("---")
+            with st.spinner("Searching the web…"):
+                hits = fetch_company_culture(company_query, num_results=6)
+            with st.spinner("Synthesizing insights…"):
+                summary = synthesize_culture_insights(company_query, hits)
+            st.info(summary)
+            with st.expander("📎 Source snippets"):
+                for h in hits:
+                    if h.get("title"):
+                        st.markdown(f"**{h['title']}**")
+                    if h.get("snippet"):
+                        st.write(h["snippet"])
+                    if h.get("link"):
+                        st.caption(h["link"])
+                    st.write("---")
         except Exception as e:
             st.error(str(e))
 
