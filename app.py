@@ -107,6 +107,39 @@ with st.sidebar:
 
     if st.session_state["cv_text"]:
         st.caption(f"CV loaded ✅ ({len(st.session_state['cv_text'])} chars)")
+        with st.expander("🔬 Inspect extracted CV text"):
+            _cv = st.session_state["cv_text"]
+            tab_raw, tab_labelled, tab_chunks = st.tabs(
+                ["Raw text", "Section labels", "Chunks"]
+            )
+            with tab_raw:
+                st.caption(
+                    "Exactly what was extracted from your PDF (or pasted). "
+                    "Check for scrambled dates, merged lines, or missing sections."
+                )
+                st.text(_cv[:3000] + ("\n\n… [truncated]" if len(_cv) > 3000 else ""))
+
+            with tab_labelled:
+                st.caption(
+                    "How the **cover letter generator** sees your CV — each paragraph "
+                    "is tagged with its detected section type. "
+                    "This is the exact text passed into the LLM prompt for Tab 3."
+                )
+                from career_copilot.cover_letter import _label_cv_sections
+                _labelled = _label_cv_sections(_cv)
+                st.text(_labelled[:3000] + ("\n\n… [truncated]" if len(_labelled) > 3000 else ""))
+
+            with tab_chunks:
+                st.caption(
+                    "How your CV is split into chunks for the RAG vector store "
+                    "(Tab 2 — CV Matcher uses these for embedding and retrieval)."
+                )
+                _chunks = chunk_text(_cv, chunk_size=1200, overlap=200)
+                st.caption(f"{len(_chunks)} chunk(s) total")
+                for _i, _ch in enumerate(_chunks):
+                    st.markdown(f"**Chunk {_i + 1}** — {len(_ch)} chars")
+                    st.text(_ch)
+                    st.write("---")
 
     st.divider()
     st.subheader("2. Your details")
