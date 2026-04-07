@@ -525,16 +525,24 @@ with tab_cl:
             cv_text_for_check = st.session_state.get("cv_text", "")
             if cv_text_for_check:
                 hc = hallucination_check(cv_text_for_check, st.session_state["cover_letter"])
-                ratio = hc["traceability_ratio"]
+                score = hc["grounding_score"]
                 hcol1, hcol2, hcol3 = st.columns(3)
-                hcol1.metric("📎 Grounding score", f"{ratio:.0%}",
-                             help="Fraction of phrases traceable back to your CV. Higher = less hallucination.")
-                hcol2.metric("Traceable phrases", hc["traceable"])
-                hcol3.metric("Total phrases checked", hc["total_phrases"])
-                if hc.get("untraceable_samples"):
-                    with st.expander("⚠️ Phrases not directly matched in CV (review manually)"):
+                hcol1.metric("📎 Grounding score", f"{score:.0%}",
+                             help="Weighted composite: 50% entity traceability, 25% n-gram overlap, 25% keyword recall. Higher = less hallucination.")
+                hcol2.metric("Entity traceability", f"{hc['entity_score']:.0%}",
+                             help="Are proper nouns, numbers, and technical terms from the letter actually in your CV?")
+                hcol3.metric("Keyword recall", f"{hc['keyword_score']:.0%}",
+                             help="What fraction of your CV's distinctive words appear in the letter?")
+
+                with st.expander("📊 Grounding breakdown"):
+                    bcol1, bcol2, bcol3 = st.columns(3)
+                    bcol1.metric("Entities checked", hc["total_entities"])
+                    bcol2.metric("Entities traceable", hc["traceable_entities"])
+                    bcol3.metric("N-gram overlap", f"{hc['ngram_score']:.0%}")
+                    if hc.get("untraceable_samples"):
+                        st.caption("⚠️ Entities/phrases not directly matched in CV (review manually):")
                         for s in hc["untraceable_samples"]:
-                            st.caption(f"- {s}")
+                            st.caption(f"  • {s}")
 
             st.download_button(
                 "⬇️ Download as .txt",

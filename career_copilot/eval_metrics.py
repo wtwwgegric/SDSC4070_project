@@ -103,49 +103,125 @@ def keyword_hit_rate_improvement(
     }
 
 
-def hallucination_check(cv_text: str, generated_text: str, window: int = 6) -> dict[str, Any]:
-    """Heuristic hallucination check: are n-gram phrases in the generated text traceable to the CV?
+def hallucination_check(cv_text: str, generated_text: str, window: int = 4) -> dict[str, Any]:
+    """Multi-strategy grounding check for generated cover letters.
 
-    Method: extract all `window`-word n-grams from the generated text, check if each
-    appears verbatim in the CV. This is a conservative lower bound but is fully objective.
+    Combines three complementary signals:
+      1. Entity traceability — are proper nouns, numbers, and named entities in the
+         generated text actually present in the CV?
+      2. Short n-gram overlap — 3-to-4-word content phrases found verbatim in CV.
+      3. Keyword recall — what fraction of distinctive CV keywords appear in the letter?
+
+    The final grounding score is a weighted average (entity: 50%, n-gram: 25%, keyword: 25%)
+    because entity traceability is the strongest hallucination signal (a fabricated company
+    name or metric is the most damaging kind of hallucination in a cover letter).
 
     Returns:
-      total_phrases    : int
-      traceable        : int
-      traceability_ratio: float — higher is better (less hallucination)
-      untraceable_samples: list[str] — up to 5 unverified phrases for manual review
+      grounding_score       : float — weighted overall score (0-1, higher = better)
+      entity_score          : float — fraction of generated entities found in CV
+      ngram_score           : float — fraction of content n-grams found in CV
+      keyword_score         : float — fraction of CV keywords used in letter
+      total_entities        : int
+      traceable_entities    : int
+      untraceable_samples   : list[str] — entities/phrases not found in CV (for review)
+      total_phrases         : int   — (legacy compat)
+      traceable             : int   — (legacy compat)
+      traceability_ratio    : float — (legacy compat, = grounding_score)
     """
     cv_lower = cv_text.lower()
     gen_lower = generated_text.lower()
 
-    words = gen_lower.split()
-    if len(words) < window:
-        return {"total_phrases": 0, "traceable": 0, "traceability_ratio": 1.0, "untraceable_samples": []}
+    # --- Strategy 1: Entity traceability ---
+    # Extract things that MUST come from the CV: numbers, proper noun phrases,
+    # company names, tool names, degree names, dates
+    entity_patterns = [
+        r'\b\d[\d,.%–-]+\b',                        # numbers, percentages, ranges
+        r'\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b',  # Multi-word proper nouns
+        r'\b(?:Python|SQL|C\+\+|Excel|Tableau|Pandas|NumPy|Scikit-learn|'
+        r'Matplotlib|Seaborn|Jupyter|JSON|PCA|SVM|IQR|ML|KPI)\b',  # technical terms
+    ]
+    entities_found = set()
+    for pat in entity_patterns:
+        for m in re.finditer(pat, generated_text):
+            ent = m.group().strip()
+            if len(ent) >= 2:
+                entities_found.add(ent)
 
-    ngrams = [" ".join(words[i: i + window]) for i in range(len(words) - window + 1)]
-    # Only check noun-like phrases (skip those with mostly stopwords)
+    # Filter out common non-CV phrases (salutations, generic proper nouns)
+    generic = {"Dear Hiring Manager", "Yours", "Thank", "Additionally", "Furthermore",
+               "Complementing"}
+    entities_found = {e for e in entities_found if e not in generic and len(e) > 2}
+
+    traceable_entities = []
+    untraceable_entities = []
+    for ent in entities_found:
+        if ent.lower() in cv_lower:
+            traceable_entities.append(ent)
+        else:
+            untraceable_entities.append(ent)
+
+    entity_score = (len(traceable_entities) / len(entities_found)) if entities_found else 1.0
+
+    # --- Strategy 2: Short content n-gram overlap ---
     stopwords = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
-                 "of", "with", "as", "is", "are", "was", "were", "i", "my", "your"}
+                 "of", "with", "as", "is", "am", "are", "was", "were", "i", "my", "your",
+                 "this", "that", "these", "those", "by", "from", "be", "been", "being",
+                 "have", "has", "had", "do", "does", "did", "will", "would", "can", "could",
+                 "shall", "should", "may", "might", "not", "no", "also", "very", "more"}
 
-    def _is_content_ngram(ng: str) -> bool:
-        tokens = ng.split()
-        content = [t for t in tokens if t not in stopwords]
-        return len(content) >= 2
+    words = gen_lower.split()
+    ngram_traceable = 0
+    ngram_total = 0
+    for w in (3, 4):
+        if len(words) < w:
+            continue
+        for i in range(len(words) - w + 1):
+            gram = words[i: i + w]
+            content_words = [t for t in gram if t.strip(string.punctuation) not in stopwords]
+            if len(content_words) < 2:
+                continue
+            ngram_total += 1
+            phrase = " ".join(gram)
+            if phrase in cv_lower:
+                ngram_traceable += 1
 
-    content_ngrams = [ng for ng in ngrams if _is_content_ngram(ng)]
-    if not content_ngrams:
-        return {"total_phrases": 0, "traceable": 0, "traceability_ratio": 1.0, "untraceable_samples": []}
+    ngram_score = (ngram_traceable / ngram_total) if ngram_total else 1.0
 
-    traceable = [ng for ng in content_ngrams if ng in cv_lower]
-    untraceable = [ng for ng in content_ngrams if ng not in cv_lower]
+    # --- Strategy 3: Keyword recall (distinctive CV words used in letter) ---
+    cv_words = set(re.findall(r'\b[a-z]{4,}\b', cv_lower))
+    # Remove very common English words
+    common = {"this", "that", "with", "from", "have", "been", "were", "also", "will",
+              "more", "your", "they", "their", "about", "would", "could", "should",
+              "which", "these", "those", "than", "into", "most", "such", "some",
+              "each", "make", "like", "just", "over", "only", "very", "when", "what",
+              "them", "then", "here", "where", "much", "well", "back", "after", "before",
+              "through", "between", "under"}
+    cv_distinctive = cv_words - common
+    if cv_distinctive:
+        gen_words = set(re.findall(r'\b[a-z]{4,}\b', gen_lower))
+        keyword_overlap = len(cv_distinctive & gen_words)
+        keyword_score = keyword_overlap / len(cv_distinctive)
+    else:
+        keyword_score = 1.0
 
-    ratio = round(len(traceable) / len(content_ngrams), 4) if content_ngrams else 1.0
+    # --- Weighted final score ---
+    grounding_score = round(
+        0.50 * entity_score + 0.25 * ngram_score + 0.25 * keyword_score, 4
+    )
 
+    # Legacy-compatible keys
     return {
-        "total_phrases": len(content_ngrams),
-        "traceable": len(traceable),
-        "traceability_ratio": ratio,
-        "untraceable_samples": untraceable[:5],
+        "grounding_score": grounding_score,
+        "entity_score": round(entity_score, 4),
+        "ngram_score": round(ngram_score, 4),
+        "keyword_score": round(keyword_score, 4),
+        "total_entities": len(entities_found),
+        "traceable_entities": len(traceable_entities),
+        "untraceable_samples": untraceable_entities[:5],
+        # Legacy keys for app.py compatibility
+        "total_phrases": len(entities_found),
+        "traceable": len(traceable_entities),
+        "traceability_ratio": grounding_score,
     }
 
 
