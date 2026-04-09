@@ -338,9 +338,9 @@ with tab_search:
     with s_col3:
         search_sites = st.multiselect(
             "Job boards",
-            options=["indeed", "linkedin"],
-            default=["indeed"],
-            help="Indeed is more reliable; LinkedIn may rate-limit after ~10 results.",
+            options=["linkedin", "indeed"],
+            default=["linkedin", "indeed"],
+            help="LinkedIn is searched first. If scraping is blocked on cloud, the app can fall back to Serper web search when a Serper key is provided.",
         )
     with s_col4:
         search_results_n = st.slider("Results per site", min_value=5, max_value=20, value=10)

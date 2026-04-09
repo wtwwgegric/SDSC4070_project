@@ -16,6 +16,8 @@ from typing import Any
 
 import requests
 
+from career_copilot.config import _get
+
 
 # ---------------------------------------------------------------------------
 # Shared browser-like headers to reduce bot detection
@@ -29,6 +31,66 @@ _HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
+
+
+def _search_jobs_via_serper(
+    search_term: str,
+    location: str = "",
+    site: str = "linkedin",
+    num_results: int = 10,
+) -> list[dict[str, Any]]:
+    """Fallback search using Serper web results.
+
+    This is primarily used for Streamlit Cloud, where direct scraping from
+    LinkedIn/Indeed is more likely to be blocked.
+    """
+    api_key = _get("SERPER_API_KEY")
+    if not api_key:
+        return []
+
+    domain = "linkedin.com/jobs/view" if site == "linkedin" else "indeed.com"
+    location_clause = f' "{location}"' if location.strip() else ""
+    query = f'site:{domain} "{search_term}"{location_clause}'
+
+    resp = requests.post(
+        "https://google.serper.dev/search",
+        headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+        json={"q": query, "num": min(num_results, 10)},
+        timeout=15,
+    )
+    if resp.status_code != 200:
+        return []
+
+    data = resp.json()
+    organic = data.get("organic", []) if isinstance(data, dict) else []
+    results: list[dict[str, Any]] = []
+
+    for item in organic[:num_results]:
+        link = item.get("link") or ""
+        title = item.get("title") or ""
+        snippet = item.get("snippet") or ""
+        if not link:
+            continue
+
+        company = ""
+        if " - " in title:
+            parts = [p.strip() for p in title.split(" - ") if p.strip()]
+            if len(parts) >= 2:
+                title = parts[0]
+                company = parts[1]
+
+        results.append({
+            "title": title,
+            "company": company,
+            "location": location,
+            "job_type": "",
+            "date_posted": "",
+            "job_url": link,
+            "description": snippet,
+            "site": site,
+        })
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +141,7 @@ def search_jobs(
 
     rows = []
     site_errors: list[str] = []
+    fallback_results: list[dict[str, Any]] = []
     for site in sites:
         cap = linkedin_cap if site == "linkedin" else indeed_cap
         kwargs: dict[str, Any] = dict(
@@ -109,22 +172,53 @@ def search_jobs(
                 retry_df = scrape_jobs(**retry_kwargs)
                 if retry_df is not None and not retry_df.empty:
                     rows.append(retry_df)
+                    continue
+
+            # Cloud-friendly fallback: use Serper web search to return job links.
+            fallback_results.extend(
+                _search_jobs_via_serper(
+                    search_term=search_term,
+                    location=location,
+                    site=site,
+                    num_results=cap,
+                )
+            )
         except Exception:
             # If one site fails (rate-limited, invalid country, etc.) continue
             site_errors.append(site)
+            fallback_results.extend(
+                _search_jobs_via_serper(
+                    search_term=search_term,
+                    location=location,
+                    site=site,
+                    num_results=cap,
+                )
+            )
             continue
 
     if not rows:
+        if fallback_results:
+            seen_urls: set[str] = set()
+            deduped: list[dict[str, Any]] = []
+            for item in fallback_results:
+                url = item.get("job_url") or ""
+                if not url or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                deduped.append(item)
+            if deduped:
+                return deduped
         if site_errors and len(site_errors) == len(sites):
             raise ValueError(
                 "Job board search failed on all selected sites. "
                 "LinkedIn is commonly rate-limited, and Indeed may block cloud scraping. "
-                "Try Indeed only, clear the country filter, or paste a JD URL/text manually."
+                "If you added a Serper key, the app will try a web-search fallback automatically. "
+                "Otherwise, paste a JD URL/text manually."
             )
         raise ValueError(
             "No jobs were returned by the selected job boards. "
             "This is often caused by an overly strict location/country filter or cloud scraping limits. "
-            "Try Indeed only, broaden the keywords, clear the country filter, or paste a JD URL/text manually."
+            "Try broader keywords, clear the country filter, add a Serper key for web-search fallback, or paste a JD URL/text manually."
         )
 
     import pandas as pd
@@ -188,6 +282,67 @@ def _parse_html(html: str, selectors: list[str]) -> str:
     return ""
 
 
+def _parse_structured_job_data(html: str) -> str:
+    """Extract JD text from common JSON-LD / structured data blocks."""
+    import json
+
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    for script in soup.select('script[type="application/ld+json"]'):
+        raw = script.string or script.get_text() or ""
+        if not raw.strip():
+            continue
+        try:
+            data = json.loads(raw)
+        except Exception:
+            continue
+
+        candidates = data if isinstance(data, list) else [data]
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            desc = item.get("description")
+            if isinstance(desc, str):
+                text = re.sub(r"<[^>]+>", " ", desc)
+                text = re.sub(r"\n{3,}", "\n\n", text)
+                text = re.sub(r"\s{2,}", " ", text).strip()
+                if len(text) > 100:
+                    return text
+    return ""
+
+
+def _fetch_via_reader(url: str, timeout: int = 30) -> str:
+    """Fallback page reader for cloud environments where direct scraping is blocked."""
+    reader_url = f"https://r.jina.ai/http://{url}"
+    try:
+        resp = requests.get(reader_url, timeout=timeout)
+    except requests.exceptions.RequestException:
+        return ""
+    if resp.status_code != 200:
+        return ""
+
+    text = resp.text.strip()
+    if "Markdown Content:" in text:
+        text = text.split("Markdown Content:", 1)[1].strip()
+
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            lines.append("")
+            continue
+        if stripped.startswith("Title:") or stripped.startswith("URL Source:"):
+            continue
+        if stripped.startswith("[Skip to main content]"):
+            continue
+        lines.append(stripped)
+
+    cleaned = "\n".join(lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned if len(cleaned) > 100 else ""
+
+
 def fetch_jd_from_url(url: str, timeout: int = 15) -> str:
     """Fetch the job description text from a LinkedIn or Indeed job URL.
 
@@ -211,30 +366,53 @@ def fetch_jd_from_url(url: str, timeout: int = 15) -> str:
             "For other sites please paste the JD text directly."
         )
 
+    if is_linkedin and "/jobs/search/" in url:
+        raise ValueError(
+            "Please use a direct LinkedIn job page URL (usually contains /jobs/view/), not a search results page."
+        )
+    if is_indeed and re.search(r"/jobs(?:\.html)?(?:\?|$)", url):
+        raise ValueError(
+            "Please use a direct Indeed job posting URL, not an Indeed search results page."
+        )
+
     try:
         resp = requests.get(url, headers=_HEADERS, timeout=timeout)
     except requests.exceptions.RequestException as exc:
+        text = _fetch_via_reader(url)
+        if text:
+            return text
         raise ValueError(f"Network error fetching URL: {exc}") from exc
 
     if resp.status_code in (429, 999):
+        text = _fetch_via_reader(url)
+        if text:
+            return text
         raise ValueError(
             f"{'LinkedIn' if is_linkedin else 'Indeed'} blocked the request (HTTP {resp.status_code}). "
-            "Please paste the JD text manually."
+            "Try the direct job URL, or paste the JD text manually."
         )
     if resp.status_code == 404:
         raise ValueError("Job posting not found (404). It may have been removed.")
     if resp.status_code != 200:
+        text = _fetch_via_reader(url)
+        if text:
+            return text
         raise ValueError(
             f"Unexpected response (HTTP {resp.status_code}). Please paste the JD text manually."
         )
 
     selectors = _LINKEDIN_SELECTORS if is_linkedin else _INDEED_SELECTORS
     text = _parse_html(resp.text, selectors)
+    if not text:
+        text = _parse_structured_job_data(resp.text)
+    if not text:
+        text = _fetch_via_reader(url)
 
     if not text:
         raise ValueError(
             "Could not extract the job description from this page. "
-            "LinkedIn/Indeed may have changed their page layout, or the page requires login. "
+            "LinkedIn/Indeed may have changed their page layout, the page may require login, "
+            "or the URL may be a search page instead of a direct job post. "
             "Please paste the JD text manually."
         )
 
