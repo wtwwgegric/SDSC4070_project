@@ -1,0 +1,11 @@
+[theme]
+primaryColor = "#4A90D9"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F7FA"
+textColor = "#1E1E1E"
+
+[server]
+maxUploadSize = 10  # MB — enough for CVs
+
+[browser]
+gatherUsageStats = false

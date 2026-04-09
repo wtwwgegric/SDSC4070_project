@@ -2,17 +2,12 @@ from typing import List, Optional, Any
 import os
 
 import chromadb
-from career_copilot.config import get_client
-
-# Embedding model — configurable via OPENAI_EMBED_MODEL env var.
-# OpenAI default  : text-embedding-3-small
-# DashScope/Qwen  : text-embedding-v3
-_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-v4")
+from career_copilot.config import get_client, get_embed_model
 
 
 def _embed_texts(texts: List[str]) -> List[List[float]]:
     """Embed a list of strings using the OpenAI embeddings API."""
-    response = get_client().embeddings.create(model=_EMBED_MODEL, input=texts)
+    response = get_client().embeddings.create(model=get_embed_model(), input=texts)
     return [item.embedding for item in response.data]
 
 

@@ -32,7 +32,7 @@ from typing import Any, TypedDict
 from langgraph.graph import StateGraph, END
 
 from career_copilot.jd_analyzer import analyze_jd
-from career_copilot.cv_matcher import index_cv, match_cv_to_jd
+from career_copilot.cv_matcher import index_cv, match_cv_to_jd, compute_match_metrics
 from career_copilot.value_refiner import refine_value
 from career_copilot.cover_letter import generate_cover_letter
 
@@ -46,6 +46,7 @@ class AgentState(TypedDict, total=False):
     cv_text: str
     jd_analysis: dict[str, Any]
     match_results: list[dict[str, Any]]
+    match_metrics: dict[str, Any]
     refined_bullets: list[str]
     cover_letter: str
     candidate_name: str
@@ -73,7 +74,8 @@ def node_match_cv(state: AgentState) -> AgentState:
         if cv_text.strip():
             index_cv(cv_text)
         matches = match_cv_to_jd(state["jd_analysis"])
-        return {"match_results": matches}
+        metrics = compute_match_metrics(state["jd_analysis"], cv_text, matches)
+        return {"match_results": matches, "match_metrics": metrics}
     except Exception as exc:
         return {"error": f"CV matching failed: {exc}"}
 

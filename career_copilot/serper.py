@@ -1,25 +1,24 @@
 """Serper.dev wrapper — fetches company culture hints and synthesizes them with an LLM.
 
-Expects SERPER_API_KEY in the environment.  The correct Serper endpoint is
+Expects SERPER_API_KEY in the sidebar or environment.  The correct Serper endpoint is
 https://google.serper.dev/search (overridable via SERPER_URL env var).
 """
 import os
 from typing import List, Any, Dict
 import requests
-from dotenv import load_dotenv
 
-# Ensure .env is loaded even if this module is imported before config.py
-_ENV_PATH = os.path.join(os.path.dirname(__file__), "..", ".env")
-load_dotenv(dotenv_path=_ENV_PATH, override=True)
+from career_copilot.config import _get
 
 # Serper's actual endpoint — NOT serpapi.com which is a separate paid product
-SERPER_URL = os.getenv("SERPER_URL", "https://google.serper.dev/search")
+SERPER_URL = "https://google.serper.dev/search"
 
 
 def _get_api_key() -> str:
-    key = os.getenv("SERPER_API_KEY")
+    key = _get("SERPER_API_KEY")
     if not key:
-        raise EnvironmentError("SERPER_API_KEY not set in environment")
+        raise EnvironmentError(
+            "SERPER_API_KEY not set. Enter it in the sidebar or add it to .env."
+        )
     return key
 
 

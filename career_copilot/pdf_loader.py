@@ -1,6 +1,13 @@
+import logging
 import re
+import warnings
 from io import BytesIO
 from typing import List
+
+# Suppress harmless pdfminer/pdfplumber font-parsing warnings
+# (e.g. "Could not get FontBBox from font descriptor")
+logging.getLogger("pdfminer").setLevel(logging.ERROR)
+warnings.filterwarnings("ignore", message=".*FontBBox.*")
 
 
 def _fix_spaced_chars(text: str) -> str:

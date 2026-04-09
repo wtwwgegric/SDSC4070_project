@@ -1,19 +1,21 @@
 """Career Co-pilot — Streamlit App.
 
 Tabs:
-  1. JD Analyzer     — paste a JD → get structured insights + jargon decoder
-  2. CV Matcher      — upload CV → RAG match against JD + rewrite suggestions
-  3. Cover Letter    — auto-generate a grounded cover letter
-  4. Interview Sim   — multi-turn interview with per-round rubric scoring
+  0. Job Search     — search LinkedIn / Indeed for roles
+  1. JD Analyzer    — paste a JD → get structured insights + jargon decoder
+  2. CV Matcher     — chat-based CV ↔ JD match advisor + structured metrics
+  3. Cover Letter   — auto-generate a grounded cover letter
+  4. Interview Sim  — multi-turn interview with per-round rubric scoring
 """
 import os
 import json
 import streamlit as st
 import pandas as pd
 
+from career_copilot.config import set_runtime_config
 from career_copilot.pdf_loader import load_pdf_from_bytes, chunk_text
 from career_copilot.jd_analyzer import analyze_jd
-from career_copilot.cv_matcher import index_cv, match_cv_to_jd
+from career_copilot.cv_matcher import index_cv, match_cv_to_jd, compute_match_metrics, match_chat_response
 from career_copilot.value_refiner import refine_value
 from career_copilot.cover_letter import generate_cover_letter
 from career_copilot.interview_simulator import (
@@ -55,17 +57,101 @@ _defaults = {
     "candidate_name": "",
     "company_name": "",
     "job_search_results": [],
+    "match_metrics": None,
+    "match_chat_history": [],
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
 # ---------------------------------------------------------------------------
-# Sidebar — CV upload + company lookup
+# Sidebar — API config + CV upload + company lookup
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.title("🧭 Career Co-pilot")
     st.caption("AI-powered job search assistant")
+    st.divider()
+
+    # ── 0. API Configuration ──────────────────────────────────────────
+    st.subheader("0. API Configuration")
+
+    _PROVIDERS = {
+        "DashScope (Qwen)": {
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "model": "deepseek-v3.2",
+            "embed_model": "text-embedding-v4",
+        },
+        "OpenAI": {
+            "base_url": "",
+            "model": "gpt-4o-mini",
+            "embed_model": "text-embedding-3-small",
+        },
+        "Custom": {
+            "base_url": "",
+            "model": "",
+            "embed_model": "",
+        },
+    }
+    provider = st.selectbox(
+        "LLM Provider",
+        options=list(_PROVIDERS.keys()),
+        index=0,
+        help="Selects default Base URL, model, and embedding model. Choose 'Custom' for any other OpenAI-compatible API.",
+    )
+    _prov = _PROVIDERS[provider]
+
+    api_key = st.text_input(
+        "API Key *",
+        type="password",
+        placeholder="sk-…",
+        help="Your OpenAI or DashScope API key. Never stored — only lives in this browser session.",
+        key="sidebar_api_key",
+    )
+
+    with st.expander("Advanced model settings", expanded=False):
+        base_url = st.text_input(
+            "Base URL",
+            value=_prov["base_url"],
+            placeholder="https://api.openai.com/v1",
+            help="Leave blank for OpenAI default. Set for Qwen/DashScope or other providers.",
+            key="sidebar_base_url",
+        )
+        model_name = st.text_input(
+            "Chat model",
+            value=_prov["model"],
+            placeholder="gpt-4o-mini",
+            key="sidebar_model",
+        )
+        embed_model = st.text_input(
+            "Embedding model",
+            value=_prov["embed_model"],
+            placeholder="text-embedding-3-small",
+            key="sidebar_embed_model",
+        )
+
+    serper_key = st.text_input(
+        "Serper API Key (optional)",
+        type="password",
+        placeholder="For company culture lookup",
+        help="Get a free key at https://serper.dev. Leave blank to skip culture lookup.",
+        key="sidebar_serper_key",
+    )
+
+    # Push runtime config into the config module on every rerun
+    set_runtime_config({
+        "OPENAI_API_KEY": api_key,
+        "OPENAI_BASE_URL": base_url,
+        "OPENAI_MODEL": model_name,
+        "OPENAI_EMBED_MODEL": embed_model,
+        "SERPER_API_KEY": serper_key,
+    })
+
+    _api_ready = bool(api_key)
+    if _api_ready:
+        st.success("API key set ✅")
+    else:
+        st.warning("Enter your API key to get started.")
+
     st.divider()
 
     st.subheader("1. Upload your CV")
@@ -153,7 +239,7 @@ with st.sidebar:
     st.divider()
     st.subheader("3. ⚡ Full Pipeline (one-click)")
     st.caption("Runs JD analysis → CV matching → cover letter in sequence.")
-    if st.button("🚀 Run Full Pipeline", use_container_width=True):
+    if st.button("🚀 Run Full Pipeline", use_container_width=True, disabled=not _api_ready):
         jd_text = st.session_state.get("jd_input_text", "").strip()
         cv_text = st.session_state.get("cv_text", "").strip()
         if not jd_text:
@@ -174,8 +260,10 @@ with st.sidebar:
                     else:
                         st.session_state["jd_analysis"] = result.get("jd_analysis")
                         st.session_state["match_results"] = result.get("match_results")
+                        st.session_state["match_metrics"] = result.get("match_metrics")
                         st.session_state["cv_indexed"] = True
                         st.session_state["cover_letter"] = result.get("cover_letter", "")
+                        st.session_state["match_chat_history"] = []
                         st.success("Pipeline complete! Check all tabs.")
                 except Exception as e:
                     st.error(f"Pipeline failed: {e}")
@@ -203,7 +291,17 @@ with st.sidebar:
             st.error(str(e))
 
     st.divider()
-    st.caption("Set `OPENAI_API_KEY` (and optionally `SERPER_API_KEY`) in your environment.")
+    st.caption("Your API keys are stored only in this browser session and never saved.")
+
+# ---------------------------------------------------------------------------
+# Helper: guard actions behind API key
+# ---------------------------------------------------------------------------
+def _check_api_key() -> bool:
+    """Return True if API key is set, else show a warning and return False."""
+    if not st.session_state.get("sidebar_api_key"):
+        st.info("⬅️ Enter your API key in the sidebar to get started.")
+        return False
+    return True
 
 # ---------------------------------------------------------------------------
 # Main area — 4 tabs
@@ -344,7 +442,7 @@ with tab_jd:
         key="jd_input_text",
     )
 
-    if st.button("🔍 Analyze JD", type="primary"):
+    if st.button("🔍 Analyze JD", type="primary") and _check_api_key():
         if not jd_input.strip():
             st.warning("Please paste a JD first.")
         else:
@@ -391,13 +489,13 @@ with tab_jd:
         st.write(analysis.get("summary", ""))
 
 # ============================================================
-# Tab 2 — CV Matcher
+# Tab 2 — CV Matcher (Chat + Metrics)
 # ============================================================
 with tab_cv:
-    st.header("CV ↔ JD Matcher")
+    st.header("CV ↔ JD Match Advisor")
     st.markdown(
-        "Indexes your CV into a vector store, then retrieves the passages most "
-        "relevant to each JD requirement and suggests improved rewrites."
+        "Analyzes how well your CV matches the JD, then lets you **chat with an AI advisor** "
+        "to understand your fit, gaps, and how to improve."
     )
 
     analysis = st.session_state.get("jd_analysis")
@@ -408,79 +506,160 @@ with tab_cv:
     elif not cv_text:
         st.info("➡️ Upload your CV in the sidebar.")
     else:
-        # Value Refiner (single chunk)
-        st.subheader("✨ Value Refiner")
-        st.caption("Transform a 'dirty work' description into a polished CV bullet.")
-        chunks = chunk_text(cv_text, chunk_size=1200, overlap=200)
-        def _chunk_label(i: int) -> str:
-            # Show the first non-empty line of the chunk for a meaningful preview
-            first_line = next((l.strip() for l in chunks[i].split("\n") if l.strip()), "")
-            return f"Chunk {i+1}: {first_line[:100]}{'…' if len(first_line) > 100 else ''}"
-
-        sel = st.selectbox(
-            "Select a CV chunk to refine",
-            options=list(range(min(15, len(chunks)))),
-            format_func=_chunk_label,
-        )
-        manual_input = st.text_area("Or type a description manually", key="manual_refine")
-        to_refine = manual_input.strip() or (chunks[sel] if chunks else "")
-
-        if st.button("✨ Refine this bullet"):
-            with st.spinner("Refining…"):
-                try:
-                    refined = refine_value(to_refine)
-                    st.success("Refined:")
-                    st.write(refined)
-                except Exception as e:
-                    st.error(str(e))
-
-        st.divider()
-
-        # Show all CV chunks so user can verify quality
-        with st.expander(f"🔍 Preview all CV chunks ({len(chunks)} total)"):
-            for ci, ch in enumerate(chunks):
-                st.markdown(f"**Chunk {ci+1}**")
-                st.text(ch)
-                st.write("---")
-
-        st.divider()
-
-        # Full RAG match
-        st.subheader("🎯 Full JD ↔ CV Match")
-        if st.button("🚀 Run CV Matching", type="primary"):
-            with st.spinner("Indexing CV & running RAG match… (this calls the OpenAI Embeddings API)"):
+        # ── Run Analysis Button ─────────────────────────────────────
+        if st.button("🎯 Analyze CV ↔ JD Match", type="primary") and _check_api_key():
+            with st.spinner("Indexing CV & running RAG match… (this may take ~20 s)"):
                 try:
                     if not st.session_state["cv_indexed"]:
                         index_cv(cv_text)
                         st.session_state["cv_indexed"] = True
                     matches = match_cv_to_jd(analysis)
                     st.session_state["match_results"] = matches
+                    metrics = compute_match_metrics(analysis, cv_text, matches)
+                    st.session_state["match_metrics"] = metrics
+                    st.session_state["match_chat_history"] = []  # reset chat on new analysis
                 except Exception as e:
                     st.error(f"Matching failed: {e}")
 
+        metrics = st.session_state.get("match_metrics")
         matches = st.session_state.get("match_results")
-        if matches:
-            st.success(f"Found {len(matches)} relevant passages.")
 
-            # Keyword hit rate
-            hit_before = keyword_hit_rate(analysis, cv_text)
-            after_text = " ".join(m.get("suggested_rewrite", "") for m in matches)
-            hit_after = keyword_hit_rate(analysis, cv_text + " " + after_text)
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Keyword Hit Rate (before)", f"{hit_before:.1%}")
-            c2.metric("Keyword Hit Rate (after rewrites)", f"{hit_after:.1%}")
-            c3.metric("Improvement", f"+{hit_after - hit_before:.1%}")
+        if metrics:
+            # ── Metric Dashboard ────────────────────────────────────
+            st.subheader("📊 Match Metrics")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("🔧 Skill Match", f"{metrics['skill_match_score']:.0%}",
+                       help=f"{metrics['matched_skills_count']} of {metrics['matched_skills_count'] + metrics['missing_skills_count']} hard skills found in CV")
+            m2.metric("📂 Experience Match", f"{metrics['experience_match_score']:.0%}",
+                       help="Average RAG similarity between JD keywords and best-matching CV passages")
+            m3.metric("📋 Requirement Coverage", f"{metrics['requirement_match_score']:.0%}",
+                       help="Fraction of interview topics covered in your CV")
+            m4.metric("⭐ Overall Match", f"{metrics['overall_match_score']:.0%}",
+                       help="Weighted: 45% skills + 30% experience + 25% requirements")
+
+            # ── Matched / Missing details (collapsible) ─────────────
+            with st.expander("🔍 Matched & Missing Skills Detail"):
+                detail_col1, detail_col2 = st.columns(2)
+                with detail_col1:
+                    st.markdown("**✅ Matched Skills**")
+                    for s in metrics.get("matched_skills", []):
+                        st.markdown(f"- `{s}`")
+                    if not metrics.get("matched_skills"):
+                        st.caption("No exact matches found.")
+                with detail_col2:
+                    st.markdown("**❌ Missing Skills**")
+                    for s in metrics.get("missing_skills", []):
+                        st.markdown(f"- `{s}`")
+                    if not metrics.get("missing_skills"):
+                        st.caption("All skills matched!")
+
+                st.divider()
+                topic_col1, topic_col2 = st.columns(2)
+                with topic_col1:
+                    st.markdown("**✅ Covered Topics**")
+                    for t in metrics.get("matched_topics", []):
+                        st.markdown(f"- {t}")
+                with topic_col2:
+                    st.markdown("**❌ Uncovered Topics**")
+                    for t in metrics.get("missing_topics", []):
+                        st.markdown(f"- {t}")
+
+            # ── Raw metrics JSON (for report / evaluation) ──────────
+            with st.expander("📋 Metrics JSON (for report)"):
+                report_metrics = {
+                    "skill_match_score": metrics["skill_match_score"],
+                    "experience_match_score": metrics["experience_match_score"],
+                    "requirement_match_score": metrics["requirement_match_score"],
+                    "overall_match_score": metrics["overall_match_score"],
+                    "matched_skills_count": metrics["matched_skills_count"],
+                    "missing_skills_count": metrics["missing_skills_count"],
+                }
+                st.code(json.dumps(report_metrics, indent=2), language="json")
+
+            # ── Keyword hit rate (before/after rewrites) ────────────
+            if matches:
+                with st.expander("📈 Keyword Hit Rate (before vs after rewrites)"):
+                    hit_before = keyword_hit_rate(analysis, cv_text)
+                    after_text = " ".join(m.get("suggested_rewrite", "") for m in matches)
+                    hit_after = keyword_hit_rate(analysis, cv_text + " " + after_text)
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Before", f"{hit_before:.1%}")
+                    c2.metric("After rewrites", f"{hit_after:.1%}")
+                    c3.metric("Improvement", f"+{hit_after - hit_before:.1%}")
 
             st.divider()
-            for i, m in enumerate(matches, 1):
-                with st.expander(f"Match {i}: `{m['keyword']}`  (similarity score: {1 - m['score']:.2f})"):
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.markdown("**Original CV passage**")
-                        st.text(m["original"])
-                    with col_b:
-                        st.markdown("**Suggested rewrite**")
-                        st.success(m["suggested_rewrite"])
+
+            # ── Chat Interface ──────────────────────────────────────
+            st.subheader("💬 Ask your Match Advisor")
+            st.caption(
+                "Ask anything about your CV-JD fit. Try: "
+                "*\"What are my strongest matches?\"* · "
+                "*\"What skills should I learn?\"* · "
+                "*\"How should I rewrite my CV for this role?\"*"
+            )
+
+            # Display chat history
+            for msg in st.session_state["match_chat_history"]:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+
+            # Chat input
+            match_user_msg = st.chat_input("Ask about your CV-JD match…", key="match_chat_input")
+            if match_user_msg:
+                st.session_state["match_chat_history"].append(
+                    {"role": "user", "content": match_user_msg}
+                )
+                with st.chat_message("user"):
+                    st.markdown(match_user_msg)
+                with st.chat_message("assistant"):
+                    with st.spinner("Thinking…"):
+                        try:
+                            reply = match_chat_response(
+                                user_message=match_user_msg,
+                                jd_analysis=analysis,
+                                cv_text=cv_text,
+                                match_metrics=metrics,
+                                match_results=matches or [],
+                                chat_history=st.session_state["match_chat_history"][:-1],
+                            )
+                        except Exception as e:
+                            reply = f"⚠️ Error: {e}"
+                    st.markdown(reply)
+                st.session_state["match_chat_history"].append(
+                    {"role": "assistant", "content": reply}
+                )
+
+            if st.session_state["match_chat_history"]:
+                if st.button("🗑️ Clear match chat", key="clear_match_chat"):
+                    st.session_state["match_chat_history"] = []
+                    st.rerun()
+
+            st.divider()
+
+            # ── Value Refiner (kept, moved below chat) ──────────────
+            with st.expander("✨ Value Refiner — Polish a CV bullet"):
+                st.caption("Transform a 'dirty work' description into a polished CV bullet.")
+                chunks = chunk_text(cv_text, chunk_size=1200, overlap=200)
+                def _chunk_label(i: int) -> str:
+                    first_line = next((l.strip() for l in chunks[i].split("\n") if l.strip()), "")
+                    return f"Chunk {i+1}: {first_line[:100]}{'…' if len(first_line) > 100 else ''}"
+
+                sel = st.selectbox(
+                    "Select a CV chunk to refine",
+                    options=list(range(min(15, len(chunks)))),
+                    format_func=_chunk_label,
+                )
+                manual_input = st.text_area("Or type a description manually", key="manual_refine")
+                to_refine = manual_input.strip() or (chunks[sel] if chunks else "")
+
+                if st.button("✨ Refine this bullet"):
+                    with st.spinner("Refining…"):
+                        try:
+                            refined = refine_value(to_refine)
+                            st.success("Refined:")
+                            st.write(refined)
+                        except Exception as e:
+                            st.error(str(e))
 
 # ============================================================
 # Tab 3 — Cover Letter
@@ -503,7 +682,7 @@ with tab_cl:
         candidate = st.session_state.get("candidate_name") or "the candidate"
         company = st.session_state.get("company_name") or "your company"
 
-        if st.button("✉️ Generate Cover Letter", type="primary"):
+        if st.button("✉️ Generate Cover Letter", type="primary") and _check_api_key():
             with st.spinner("Writing cover letter…"):
                 try:
                     letter = generate_cover_letter(
@@ -568,6 +747,8 @@ with tab_sim:
 
     if not analysis:
         st.info("➡️ Analyze a JD first (Tab 1).")
+    elif not _check_api_key():
+        pass  # blocked — no API key
     else:
         # ── Mode toggle ──────────────────────────────────────────────
         mode = st.radio(
