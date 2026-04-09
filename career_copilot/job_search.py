@@ -78,6 +78,7 @@ def search_jobs(
     indeed_cap = min(results_wanted, 25)
 
     rows = []
+    site_errors: list[str] = []
     for site in sites:
         cap = linkedin_cap if site == "linkedin" else indeed_cap
         kwargs: dict[str, Any] = dict(
@@ -97,12 +98,34 @@ def search_jobs(
             df = scrape_jobs(**kwargs)
             if df is not None and not df.empty:
                 rows.append(df)
+                continue
+
+            # Indeed often returns no rows on cloud runners for narrow geo filters.
+            # Retry once with broader parameters before giving up.
+            if site == "indeed":
+                retry_kwargs = dict(kwargs)
+                retry_kwargs["location"] = None
+                retry_kwargs.pop("country_indeed", None)
+                retry_df = scrape_jobs(**retry_kwargs)
+                if retry_df is not None and not retry_df.empty:
+                    rows.append(retry_df)
         except Exception:
             # If one site fails (rate-limited, invalid country, etc.) continue
+            site_errors.append(site)
             continue
 
     if not rows:
-        return []
+        if site_errors and len(site_errors) == len(sites):
+            raise ValueError(
+                "Job board search failed on all selected sites. "
+                "LinkedIn is commonly rate-limited, and Indeed may block cloud scraping. "
+                "Try Indeed only, clear the country filter, or paste a JD URL/text manually."
+            )
+        raise ValueError(
+            "No jobs were returned by the selected job boards. "
+            "This is often caused by an overly strict location/country filter or cloud scraping limits. "
+            "Try Indeed only, broaden the keywords, clear the country filter, or paste a JD URL/text manually."
+        )
 
     import pandas as pd
     combined = pd.concat(rows, ignore_index=True)

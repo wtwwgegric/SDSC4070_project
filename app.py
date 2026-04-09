@@ -356,9 +356,9 @@ with tab_search:
     search_country = st.selectbox(
         "Country (for Indeed filtering)",
         options=[""] + _INDEED_COUNTRIES,
-        index=1,   # default: hong kong
+        index=0,
         format_func=lambda x: x.title() if x else "— auto-detect from location —",
-        help="Required for Indeed to return results from the correct country.",
+        help="Optional. Leave blank unless Indeed is clearly searching the wrong country.",
         key="job_search_country",
     )
 
@@ -376,8 +376,6 @@ with tab_search:
                         country_indeed=st.session_state.get("job_search_country", ""),
                     )
                     st.session_state["job_search_results"] = results
-                    if not results:
-                        st.warning("No results found. Try different keywords or location.")
                 except Exception as e:
                     st.error(f"Search failed: {e}")
 
