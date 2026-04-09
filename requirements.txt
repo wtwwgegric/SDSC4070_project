@@ -8,7 +8,7 @@ langchain-core>=0.2
 langgraph>=0.2
 
 # Vector DB
-chromadb>=0.5
+chromadb==1.5.5
 
 # PDF extraction
 pdfplumber
