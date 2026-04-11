@@ -7,10 +7,17 @@ Tabs:
   3. Cover Letter   — auto-generate a grounded cover letter
   4. Interview Sim  — multi-turn interview with per-round rubric scoring
 """
+from pathlib import Path
+import sys
 import os
 import json
 import streamlit as st
 import pandas as pd
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 from career_copilot.config import set_runtime_config
 from career_copilot.pdf_loader import load_pdf_from_bytes, chunk_text
