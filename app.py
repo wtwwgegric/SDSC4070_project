@@ -19,7 +19,7 @@ from career_copilot.cv_matcher import index_cv, match_cv_to_jd, compute_match_me
 from career_copilot.value_refiner import refine_value
 from career_copilot.cover_letter import generate_cover_letter
 from career_copilot.interview_simulator import (
-    InterviewSession, generate_self_intro_draft, prep_chat_response, prep_chat_summary
+    InterviewSession, available_interview_styles, generate_self_intro_draft, prep_chat_response, prep_chat_summary
 )
 from career_copilot.serper import fetch_company_culture, synthesize_culture_insights
 from career_copilot.eval_metrics import (
@@ -52,6 +52,7 @@ _defaults = {
     "interview_phase": "idle", # idle | self_intro | awaiting_answer | reviewing_feedback | done
     "interview_self_intro": "",
     "interview_mode": "prep",          # "prep" | "test"
+    "interview_style": "1-to-1 interview",
     "prep_chat_history": [],            # list of {role, content}
     "prep_chat_summary": "",
     "candidate_name": "",
@@ -734,9 +735,25 @@ with tab_cl:
 with tab_sim:
     st.header("Interview Simulator")
     st.markdown(
-        "Practice a **multi-turn interview** based on the JD and your CV. "
-        "Each answer is scored on Technical Accuracy, Completeness, and Clarity (1–5)."
+        "Practice a **multi-turn interview** based on the JD, with optional CV-match context. "
+        "You can start as soon as the JD is analyzed; a cover letter is not required."
     )
+    st.caption(
+        "CV matching helps tailor resume deep-dive questions, but the interview module is usable "
+        "immediately after JD analysis."
+    )
+
+    with st.expander("🧭 Common interview directions"):
+        st.markdown("**1-to-1 interview**")
+        st.markdown("- Behavioral: past teamwork, ownership, problem-solving, failure, conflict")
+        st.markdown("- Motivational: why this role, why this company, why you")
+        st.markdown("- Situational: ambiguity, prioritisation, stakeholder pressure")
+        st.markdown("- Resume deep dive: follow-ups on projects, internships, and achievements")
+        st.markdown("**Technical interview**")
+        st.markdown("- Technical application: how you would solve role-relevant tasks")
+        st.markdown("- Project deep dive: technical choices and implementation details")
+        st.markdown("- Technical reasoning: choosing methods, tools, or trade-offs")
+        st.markdown("- Case-style scenarios: data, business, and communication constraints")
 
     analysis = st.session_state.get("jd_analysis")
     matches = st.session_state.get("match_results", [])
@@ -768,7 +785,7 @@ with tab_sim:
             st.caption(
                 "💡 Try: *'What questions might they ask about my Python experience?'* "
                 "or *'How should I answer a weakness question?'* "
-                "or *'Is this a good answer: …'*"
+                "or *'How should I answer a technical trade-off question?'*"
             )
 
             # Self-intro reference
@@ -858,6 +875,20 @@ with tab_sim:
 
         # ── MOCK TEST MODE ────────────────────────────────────────────
         else:
+            style_options = available_interview_styles()
+            st.session_state["interview_style"] = st.selectbox(
+                "Mock interview format",
+                options=style_options,
+                index=style_options.index(st.session_state.get("interview_style", style_options[0]))
+                if st.session_state.get("interview_style", style_options[0]) in style_options else 0,
+                help="1-to-1 interview emphasises behavioral and motivational fit. Technical interview emphasises applied skills and reasoning.",
+                disabled=phase != "idle",
+            )
+            st.caption(
+                "The selected format controls the planned question mix and the scoring guidance used by the evaluator."
+            )
+            st.divider()
+
             col_start, col_reset = st.columns([1, 1])
             with col_start:
                 if phase == "idle" and st.button("▶ Start Interview", type="primary"):
@@ -909,6 +940,7 @@ with tab_sim:
                         jd_analysis=analysis,
                         match_results=matches or [],
                         self_intro=intro_text.strip(),
+                        interview_style=st.session_state.get("interview_style", "1-to-1 interview"),
                     )
                     st.session_state["interview_session"] = sess
                     st.session_state["interview_scores"] = []
@@ -932,7 +964,9 @@ with tab_sim:
                 st.subheader("🗒️ Interview History")
                 for i, entry in enumerate(history):
                     with st.container(border=True):
-                        st.markdown(f"**Q{i+1}:** {entry['question']}")
+                        question_type = getattr(entry["score"], "question_type", "behavioral")
+                        question_label = question_type.replace("_", " ").title()
+                        st.markdown(f"**Q{i+1} - {question_label}:** {entry['question']}")
                         st.markdown(f"**Your answer:** {entry['answer']}")
                         sc = entry["score"]
                         with st.expander(f"📊 Score: {sc.overall:.1f}/5 — click to expand"):
@@ -948,7 +982,10 @@ with tab_sim:
             if phase == "awaiting_answer" and session:
                 total = session._max_questions
                 done_count = len(history)
+                current_type = getattr(session, "_current_question_type", "")
                 st.subheader(f"🎙️ Question {done_count + 1} of {total}")
+                if current_type:
+                    st.caption(f"Current question type: {current_type.replace('_', ' ').title()}")
                 st.info(st.session_state["interview_current_q"])
                 user_answer = st.text_area("Your answer", key="user_answer_input", height=150,
                                            placeholder="Type your answer here…")
@@ -976,6 +1013,7 @@ with tab_sim:
                 total = session._max_questions
 
                 st.subheader(f"📊 Feedback — Question {rounds_done} of {total}")
+                st.caption(f"Question type: {getattr(sc, 'question_type', 'behavioral').replace('_', ' ').title()}")
                 fc1, fc2, fc3, fc4 = st.columns(4)
                 fc1.metric("Technical", f"{sc.technical_accuracy}/5")
                 fc2.metric("Completeness", f"{sc.completeness}/5")
@@ -1000,11 +1038,26 @@ with tab_sim:
                 with st.spinner("Generating closing assessment…"):
                     report = session.final_report()
 
+                st.caption(f"Interview format: {report.get('interview_style', 'N/A')}")
+
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Avg Technical", f"{report['avg_technical_accuracy']:.1f}/5")
                 col2.metric("Avg Completeness", f"{report['avg_completeness']:.1f}/5")
                 col3.metric("Avg Clarity", f"{report['avg_clarity']:.1f}/5")
                 col4.metric("Avg Overall", f"{report['avg_overall']:.1f}/5")
+
+                if report.get("per_type_summary"):
+                    st.divider()
+                    st.subheader("🧩 Per-type breakdown")
+                    per_type_df = pd.DataFrame(report["per_type_summary"])
+                    st.dataframe(
+                        per_type_df[[
+                            "label", "rounds", "avg_technical_accuracy",
+                            "avg_completeness", "avg_clarity", "avg_overall"
+                        ]],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
 
                 st.divider()
                 st.subheader("📈 Score Progression")
@@ -1020,7 +1073,7 @@ with tab_sim:
                 with st.expander("📊 Per-round breakdown"):
                     for r in report.get("per_round", []):
                         st.markdown(
-                            f"**Round {r['round']}** — "
+                            f"**Round {r['round']} ({r['question_type'].replace('_', ' ').title()})** — "
                             f"Technical: {r['technical_accuracy']}, "
                             f"Completeness: {r['completeness']}, "
                             f"Clarity: {r['clarity']}, "
