@@ -785,23 +785,29 @@ with tab_sim:
 
         # ── PREP CHAT MODE ────────────────────────────────────────────
         if st.session_state["interview_mode"] == "prep":
-            st.markdown(
-                "Chat freely with your AI career coach. Ask about potential questions, "
-                "get STAR talking-point suggestions, or share a draft answer for feedback."
-            )
-            st.caption(
-                "💡 Try: *'What questions might they ask about my Python experience?'* "
-                "or *'How should I answer a weakness question?'* "
-                "or *'How should I answer a technical trade-off question?'*"
-            )
+            prep_history = st.session_state["prep_chat_history"]
 
-            # Self-intro reference
+            # ── Compact top bar: tips + action buttons ──
+            top_left, top_right = st.columns([3, 1])
+            with top_left:
+                st.caption(
+                    "💡 Try: *'What might they ask about my Python experience?'* · "
+                    "*'How should I answer a weakness question?'*"
+                )
+            with top_right:
+                btn_cols = st.columns(2)
+                with btn_cols[0]:
+                    do_summarise = st.button("📋", help="Summarise session", disabled=not prep_history)
+                with btn_cols[1]:
+                    do_clear = st.button("🗑️", help="Clear chat", disabled=not prep_history)
+
+            # ── Self-intro (collapsed) ──
             self_intro_txt = st.session_state.get("interview_self_intro", "")
             if not self_intro_txt:
                 cv_for_intro = st.session_state.get("cv_text", "")
-                col_gen, col_skip = st.columns([1, 3])
+                col_gen, _ = st.columns([1, 3])
                 with col_gen:
-                    if st.button("✨ Generate self-intro first", disabled=not cv_for_intro):
+                    if st.button("✨ Generate self-intro", disabled=not cv_for_intro):
                         with st.spinner("Drafting self-introduction…"):
                             try:
                                 draft = generate_self_intro_draft(cv_for_intro, analysis)
@@ -812,7 +818,7 @@ with tab_sim:
                 if not cv_for_intro:
                     st.caption("Upload CV in the sidebar to enable auto self-intro.")
             else:
-                with st.expander("📌 Your Self-Introduction (click to read/edit)", expanded=False):
+                with st.expander("📌 Your Self-Introduction", expanded=False):
                     edited = st.text_area(
                         "Edit your intro",
                         value=self_intro_txt,
@@ -823,62 +829,63 @@ with tab_sim:
                     if edited != self_intro_txt:
                         st.session_state["interview_self_intro"] = edited
 
-            st.divider()
+            # ── Session summary (collapsed, above chat) ──
+            summary_text = st.session_state.get("prep_chat_summary", "")
+            if summary_text:
+                with st.expander("📋 Session Summary", expanded=False):
+                    st.markdown(summary_text)
 
-            # Chat history display
-            prep_history = st.session_state["prep_chat_history"]
-            for msg in prep_history:
-                with st.chat_message(msg["role"]):
-                    st.markdown(msg["content"])
+            # ── Handle top-bar button actions ──
+            if do_clear:
+                st.session_state["prep_chat_history"] = []
+                st.session_state["prep_chat_summary"] = ""
+                st.rerun()
+            if do_summarise:
+                with st.spinner("Summarising…"):
+                    try:
+                        summary = prep_chat_summary(
+                            chat_history=prep_history,
+                            jd_analysis=analysis,
+                        )
+                        st.session_state["prep_chat_summary"] = summary
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Could not summarise: {e}")
 
-            # Chat input
+            # ── Scrollable chat area ──
+            chat_box = st.container(height=480)
+            with chat_box:
+                if not prep_history:
+                    st.markdown(
+                        "<p style='text-align:center;color:#888;margin-top:180px'>"
+                        "Ask your career coach anything about the role below ↓</p>",
+                        unsafe_allow_html=True,
+                    )
+                for msg in prep_history:
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
+
+            # ── Chat input (pinned at bottom by Streamlit) ──
             user_msg = st.chat_input("Ask your career coach…")
             if user_msg:
                 st.session_state["prep_chat_history"].append(
                     {"role": "user", "content": user_msg}
                 )
-                with st.chat_message("user"):
-                    st.markdown(user_msg)
-                with st.chat_message("assistant"):
-                    with st.spinner("Thinking…"):
-                        try:
-                            reply = prep_chat_response(
-                                user_message=user_msg,
-                                chat_history=prep_history[:-1],  # exclude the one just appended
-                                jd_analysis=analysis,
-                                cv_text=st.session_state.get("cv_text", ""),
-                                self_intro=st.session_state.get("interview_self_intro", ""),
-                            )
-                        except Exception as e:
-                            reply = f"⚠️ Error: {e}"
-                    st.markdown(reply)
+                with st.spinner("Thinking…"):
+                    try:
+                        reply = prep_chat_response(
+                            user_message=user_msg,
+                            chat_history=prep_history[:-1],
+                            jd_analysis=analysis,
+                            cv_text=st.session_state.get("cv_text", ""),
+                            self_intro=st.session_state.get("interview_self_intro", ""),
+                        )
+                    except Exception as e:
+                        reply = f"⚠️ Error: {e}"
                 st.session_state["prep_chat_history"].append(
                     {"role": "assistant", "content": reply}
                 )
-
-            if prep_history:
-                btn_col1, btn_col2 = st.columns([1, 1])
-                with btn_col1:
-                    if st.button("📋 Summarise this session"):
-                        with st.spinner("Summarising…"):
-                            try:
-                                summary = prep_chat_summary(
-                                    chat_history=prep_history,
-                                    jd_analysis=analysis,
-                                )
-                                st.session_state["prep_chat_summary"] = summary
-                            except Exception as e:
-                                st.error(f"Could not summarise: {e}")
-                with btn_col2:
-                    if st.button("🗑️ Clear chat"):
-                        st.session_state["prep_chat_history"] = []
-                        st.session_state["prep_chat_summary"] = ""
-                        st.rerun()
-
-                summary_text = st.session_state.get("prep_chat_summary", "")
-                if summary_text:
-                    with st.expander("📋 Session Summary (save this for your notes)", expanded=True):
-                        st.markdown(summary_text)
+                st.rerun()
 
         # ── MOCK TEST MODE ────────────────────────────────────────────
         else:

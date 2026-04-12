@@ -1,5 +1,5 @@
 # Core UI
-streamlit>=1.32
+streamlit>=1.33
 
 # LLM / AI
 openai>=1.30
