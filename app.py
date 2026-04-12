@@ -879,6 +879,7 @@ with tab_sim:
                             jd_analysis=analysis,
                             cv_text=st.session_state.get("cv_text", ""),
                             self_intro=st.session_state.get("interview_self_intro", ""),
+                            match_results=st.session_state.get("match_results"),
                         )
                     except Exception as e:
                         reply = f"⚠️ Error: {e}"
@@ -990,6 +991,8 @@ with tab_sim:
                             hc3.metric("Clarity", f"{sc.clarity}/5")
                             hc4.metric("Overall", f"{sc.overall:.1f}/5")
                             st.caption(f"💬 {sc.feedback}")
+                            if getattr(sc, "interviewer_intent", ""):
+                                st.caption(f"🎯 **Intent:** {sc.interviewer_intent}")
                 st.divider()
 
             # ── Awaiting answer ──────────────────────────────────────────
@@ -1034,6 +1037,8 @@ with tab_sim:
                 fc3.metric("Clarity", f"{sc.clarity}/5")
                 fc4.metric("Overall", f"{sc.overall:.1f}/5")
                 st.info(f"💬 {sc.feedback}")
+                if getattr(sc, "interviewer_intent", ""):
+                    st.caption(f"🎯 **What the interviewer was really assessing:** {sc.interviewer_intent}")
 
                 if rounds_done >= total:
                     if st.button("🏁 View Final Report", type="primary"):
@@ -1095,4 +1100,6 @@ with tab_sim:
                         )
                         st.caption(f"Q: {r['question']}")
                         st.caption(f"Feedback: {r['feedback']}")
+                        if r.get("interviewer_intent"):
+                            st.caption(f"🎯 Intent: {r['interviewer_intent']}")
                         st.write("---")

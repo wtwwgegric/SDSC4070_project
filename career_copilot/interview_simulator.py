@@ -40,35 +40,41 @@ INTERVIEW_PLANS = {
             "type": "behavioral",
             "instruction": (
                 "Ask a behavioral STAR-style question about past teamwork, ownership, "
-                "problem-solving, or resilience."
+                "problem-solving, or resilience. You want to see a concrete example with "
+                "context, the candidate's specific actions, and a measurable or observable result."
             ),
         },
         {
             "type": "motivational",
             "instruction": (
-                "Ask why the candidate wants this role, this company, or how the role fits "
-                "their goals."
+                "Ask about the candidate's motivation for this role and company. "
+                "You are looking for a coherent narrative arc: what past experience shaped their interest, "
+                "how they arrived at this career direction, and what they hope to achieve in this position. "
+                "Genuine self-awareness matters more than rehearsed enthusiasm."
             ),
         },
         {
             "type": "situational",
             "instruction": (
                 "Ask how the candidate would handle ambiguity, conflicting priorities, "
-                "or stakeholder pressure in this role."
+                "or stakeholder pressure in this role. You want to see structured reasoning "
+                "and practical decision-making, not textbook answers."
             ),
         },
         {
             "type": "resume_deep_dive",
             "instruction": (
-                "Ask a specific follow-up about one relevant project, internship, or achievement "
-                "from the candidate's background."
+                "Pick one project, internship, or achievement from the candidate's background "
+                "and ask them to walk you through it in detail—their specific contribution, "
+                "the challenges they faced, and what they would do differently in hindsight."
             ),
         },
         {
             "type": "behavioral",
             "instruction": (
-                "Ask another behavioral question, but focus on collaboration, communication, "
-                "or learning from failure instead of repeating earlier themes."
+                "Ask another behavioral question focusing on collaboration, communication, "
+                "or learning from failure. Do not repeat earlier themes. You want to see "
+                "self-reflection and growth, not just a success story."
             ),
         },
     ],
@@ -77,35 +83,39 @@ INTERVIEW_PLANS = {
             "type": "technical",
             "instruction": (
                 "Ask a practical technical question tied to the role's core hard skills. "
-                "Focus on applied reasoning, not trivia or syntax recall."
+                "Focus on applied reasoning and trade-offs, not trivia or syntax recall. "
+                "You want to assess whether the candidate can think through a real problem."
             ),
         },
         {
             "type": "resume_deep_dive",
             "instruction": (
-                "Ask the candidate to explain a technically relevant project or task from their "
-                "background in more depth."
+                "Ask the candidate to explain a technically relevant project from their background "
+                "in depth—architecture decisions, challenges encountered, and how they measured success."
             ),
         },
         {
             "type": "technical_reasoning",
             "instruction": (
-                "Ask how the candidate would choose between methods, tools, models, or approaches "
-                "for a realistic role-related task."
+                "Present a scenario where the candidate must choose between methods, tools, models, "
+                "or approaches. You want to see structured comparison, justified trade-offs, "
+                "and awareness of constraints."
             ),
         },
         {
             "type": "situational",
             "instruction": (
-                "Ask a case-style or trade-off question involving ambiguous data, limited time, "
-                "or conflicting business constraints."
+                "Ask a case-style question involving ambiguous data, limited time, "
+                "or conflicting business constraints. You want to see how the candidate "
+                "prioritises and communicates under uncertainty."
             ),
         },
         {
             "type": "behavioral",
             "instruction": (
-                "Ask how the candidate communicates technical work, collaborates with teammates, "
-                "or handles feedback in cross-functional settings."
+                "Ask how the candidate communicates technical work to non-technical stakeholders, "
+                "collaborates across functions, or handles critical feedback. You want evidence "
+                "of adaptability in communication style."
             ),
         },
     ],
@@ -114,27 +124,43 @@ INTERVIEW_PLANS = {
 
 EVALUATION_GUIDANCE = {
     "behavioral": (
-        "For behavioral questions, technical_accuracy means relevance of the example, quality of evidence, "
-        "and whether the answer demonstrates sound judgment. Reward clear STAR structure and reflection."
+        "WHAT THE INTERVIEWER REALLY WANTS: concrete evidence of the candidate's past behavior as a predictor of "
+        "future performance—ownership, judgment, and self-awareness, not generic claims. "
+        "For scoring: technical_accuracy = relevance and quality of the example, whether it demonstrates sound judgment. "
+        "Reward clear STAR structure (Situation-Task-Action-Result) and genuine reflection on what was learned."
     ),
     "motivational": (
-        "For motivational questions, technical_accuracy means authenticity, understanding of the role/company, "
-        "and a believable alignment between the candidate and the opportunity."
+        "WHAT THE INTERVIEWER REALLY WANTS: a coherent narrative arc—how past experiences shaped the candidate's "
+        "interest, why this specific role/company (not just any job), and what they hope to achieve. Authenticity "
+        "and self-awareness matter more than rehearsed enthusiasm. "
+        "For scoring: technical_accuracy = authenticity, genuine understanding of the role/company, "
+        "and a believable connection between the candidate's trajectory and this opportunity."
     ),
     "situational": (
-        "For situational questions, technical_accuracy means practical reasoning, prioritisation, risk awareness, "
-        "and decision quality rather than factual recall."
+        "WHAT THE INTERVIEWER REALLY WANTS: to see how the candidate thinks under ambiguity—their prioritisation "
+        "framework, risk awareness, and structured decision-making process. "
+        "For scoring: technical_accuracy = practical reasoning quality, whether the candidate considers multiple "
+        "angles (stakeholders, trade-offs, constraints), and proposes a clear action plan rather than vague platitudes."
     ),
     "resume_deep_dive": (
-        "For resume deep-dive questions, technical_accuracy means whether the candidate explains their own work "
-        "credibly, specifically, and at an appropriate level of detail."
+        "WHAT THE INTERVIEWER REALLY WANTS: to verify the candidate actually did the work and understands it deeply. "
+        "Credibility comes from specific details, honest discussion of challenges, and reflection on what they would "
+        "do differently. Vague or overly polished answers raise red flags. "
+        "For scoring: technical_accuracy = specificity, credibility, appropriate level of detail, "
+        "and honest acknowledgment of limitations or lessons learned."
     ),
     "technical": (
-        "For technical questions, technical_accuracy means correctness, method/tool choice, and awareness of trade-offs."
+        "WHAT THE INTERVIEWER REALLY WANTS: evidence of applied problem-solving ability—can the candidate think "
+        "through a real problem, choose appropriate tools/methods, and reason about trade-offs? "
+        "For scoring: technical_accuracy = correctness, method/tool choice, trade-off awareness, "
+        "and ability to explain reasoning clearly rather than just stating an answer."
     ),
     "technical_reasoning": (
-        "For technical reasoning questions, technical_accuracy means structured thinking, justified choices, business or "
-        "engineering trade-offs, and ability to explain why one approach is better than another."
+        "WHAT THE INTERVIEWER REALLY WANTS: structured thinking and the ability to justify choices. The candidate "
+        "should compare approaches on clear criteria (performance, cost, maintainability, etc.) and explain why "
+        "one is preferable given the constraints. "
+        "For scoring: technical_accuracy = structured comparison, justified choices, business or engineering "
+        "trade-off awareness, and ability to articulate why one approach is better than another."
     ),
 }
 
@@ -154,6 +180,7 @@ class RubricScore:
     question: str
     answer: str
     question_type: str = "behavioral"
+    interviewer_intent: str = ""
 
 
 def generate_self_intro_draft(
@@ -168,13 +195,24 @@ def generate_self_intro_draft(
 
     prompt = (
         "Write a natural, first-person '60-second self-introduction' for a job interview.\n"
-        "Base it ONLY on the CV text provided - do not invent facts.\n"
+        "Base it ONLY on the CV text provided — do not invent facts.\n\n"
         f"Target role context: {role_summary}\n"
         f"Skills to highlight: {hard_skills}\n\n"
         f"CV text:\n{cv_text[:3000]}\n\n"
-        "Format: 3-4 short sentences. Start with the candidate's current status, "
-        "briefly mention 1-2 relevant past achievements, then state motivation for this role. "
-        "Use 'I' throughout. No bullet points."
+        "STRUCTURE (4-5 sentences):\n"
+        "1. Open with who you are: current status (student/professional), institution or current role.\n"
+        "2. Highlight your STRONGEST relevant project or achievement — be specific (name the project, "
+        "the core skill used, and one concrete result).\n"
+        "3. Plant a 'hook': briefly mention one interesting challenge or difficulty you encountered in "
+        "that project WITHOUT explaining how you solved it. This is a deliberate conversation-starter "
+        "designed to make the interviewer curious enough to ask a follow-up.\n"
+        "4. Connect to this role: state a genuine, specific motivation for why this particular position "
+        "excites you (not generic enthusiasm — tie it to your experience).\n\n"
+        "STYLE: Use 'I' throughout. Confident but not arrogant. Vary sentence length. No bullet points. "
+        "The hook should feel natural, not forced — e.g., 'During this project I had to navigate some "
+        "unexpected data-quality issues, which ultimately shaped how I approach [skill]' rather than "
+        "explicitly saying 'ask me about this'.\n"
+        "Target: 80-120 words."
     )
     resp = get_client().chat.completions.create(
         model=model,
@@ -189,6 +227,7 @@ def _build_prep_system_prompt(
     jd_analysis: dict[str, Any],
     cv_text: str,
     self_intro: str,
+    match_results: list[dict[str, Any]] | None = None,
 ) -> str:
     role_summary = jd_analysis.get("summary", "the target role")
     hard_skills = ", ".join(jd_analysis.get("hard_skills", [])[:8])
@@ -197,8 +236,24 @@ def _build_prep_system_prompt(
     cv_snippet = cv_text[:2500] if cv_text else "(CV not provided)"
     intro_line = f"The candidate's self-introduction: {self_intro}\n" if self_intro else ""
 
+    # Build skill-gap context from match results
+    gap_context = ""
+    if match_results:
+        matched = [m.get("keyword", "") for m in match_results if m.get("score", 0) > 0.5]
+        all_hard = jd_analysis.get("hard_skills", [])
+        matched_lower = {s.lower() for s in matched}
+        missing = [s for s in all_hard if s.lower() not in matched_lower]
+        if missing:
+            gap_context = (
+                f"SKILL-GAP CONTEXT (from CV-JD matching):\n"
+                f"- Strong matches: {', '.join(matched[:6])}\n"
+                f"- Gaps (not found in CV): {', '.join(missing[:6])}\n"
+                "Use these gaps as coaching opportunities: help the candidate frame them as growth "
+                "motivation and learning goals rather than weaknesses.\n\n"
+            )
+
     return (
-        "You are a supportive and expert interview coach helping a candidate prepare for a job interview.\n\n"
+        "You are a supportive, expert interview coach helping a candidate prepare for a job interview.\n\n"
         f"ROLE CONTEXT:\n"
         f"- Role summary: {role_summary}\n"
         f"- Key hard skills required: {hard_skills}\n"
@@ -206,17 +261,47 @@ def _build_prep_system_prompt(
         f"- Likely interview topics: {interview_topics}\n\n"
         f"CANDIDATE BACKGROUND (from their CV):\n{cv_snippet}\n\n"
         f"{intro_line}"
-        "YOUR COACHING STYLE:\n"
+        f"{gap_context}"
+        "YOUR COACHING PHILOSOPHY:\n"
+        "- Prepare FRAMEWORKS, not scripts. The candidate should walk in with structured thinking, "
+        "not memorised word-for-word answers. Interviews are a conversation, not a recitation.\n"
+        "- Every answer should be STRUCTURED. Teach the candidate to use the right framework for "
+        "each question type:\n"
+        "  • Behavioral questions → STAR (Situation-Task-Action-Result)\n"
+        "  • Analytical/open questions → Conclusion first, then supporting points (pyramid principle)\n"
+        "  • 'What would you do' questions → What is it → Why it matters → How I'd approach it\n"
+        "  • If stuck with no clear framework → break into Internal/External or Subjective/Objective\n"
+        "- For MOTIVATION questions, coach the candidate to build a narrative arc: "
+        "past experience → impact it had on them → why it led them to this role → what they hope to achieve. "
+        "Authenticity beats rehearsed enthusiasm.\n"
+        "- When the candidate has SKILL GAPS, help them reframe gaps as growth motivation: "
+        "'I haven't used X yet, but my experience with Y gave me a strong foundation, and learning X "
+        "is exactly why this role excites me.'\n"
+        "- Proactively help the candidate prepare 2-3 REVERSE QUESTIONS to ask the interviewer "
+        "(e.g., team structure, day-to-day work, growth expectations, management style). "
+        "Tailor these to the specific role.\n\n"
+        "INTERVIEWER-AWARENESS TIPS (share when relevant):\n"
+        "- Different interviewers prefer different answer structures. Strategic/consulting roles "
+        "tend to prefer top-down logic (macro context → market → details). Operational/product/technical "
+        "roles tend to prefer bottom-up logic (specific details → broader implications).\n"
+        "- First-round interviewers (often the direct manager/mentor) typically focus on practical skills "
+        "and work habits. Senior interviewers focus more on career thinking, communication, and collaboration.\n"
+        "- Pay attention to how the interviewer phrases questions — their output style usually matches "
+        "their preferred input style.\n\n"
+        "COACHING STYLE:\n"
         "- When the candidate asks about a question or topic, first briefly explain what the "
-        "interviewer is really looking for (1-2 sentences).\n"
-        "- Then suggest a concrete STAR-structured talking point they could use, drawn from "
-        "their actual CV background above. Be specific - reference real projects/experiences.\n"
+        "interviewer is REALLY looking for (1-2 sentences).\n"
+        "- Then suggest a concrete structured talking point drawn from their actual CV background. "
+        "Be specific — reference real projects and experiences.\n"
+        "- Encourage the candidate to embed 'hooks' in their answers — mentioning an interesting "
+        "challenge or detail without fully expanding it, to invite follow-up questions on territory "
+        "they are well-prepared for.\n"
         "- If the candidate shares a draft answer, give honest, constructive feedback: what works, "
         "what to add, what to cut, and how to make it more impactful.\n"
         "- Keep responses concise and practical. Use bullet points where helpful.\n"
         "- Never fabricate CV experiences. Only reference what is in the candidate's background.\n"
-        "- You may proactively suggest which interview topics the candidate should prioritise "
-        "based on the JD requirements."
+        "- Briefly remind the candidate about delivery when appropriate: speak with confidence and energy, "
+        "project a positive first impression, and maintain conversational tone rather than reading a script."
     )
 
 
@@ -246,7 +331,7 @@ def prep_chat_summary(
         model=model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
-        max_tokens=400,
+        max_tokens=800,
     )
     return resp.choices[0].message.content.strip()
 
@@ -257,11 +342,12 @@ def prep_chat_response(
     jd_analysis: dict[str, Any],
     cv_text: str = "",
     self_intro: str = "",
+    match_results: list[dict[str, Any]] | None = None,
     model: str = None,
 ) -> str:
     """Generate a coaching reply in the prep chat."""
     model = model or get_model("gpt-4o-mini")
-    system_prompt = _build_prep_system_prompt(jd_analysis, cv_text, self_intro)
+    system_prompt = _build_prep_system_prompt(jd_analysis, cv_text, self_intro, match_results)
 
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(chat_history)
@@ -271,7 +357,7 @@ def prep_chat_response(
         model=model,
         messages=messages,
         temperature=0.5,
-        max_tokens=600,
+        max_tokens=1200,
     )
     return resp.choices[0].message.content.strip()
 
@@ -378,9 +464,14 @@ class InterviewSession:
             })
 
         closing_prompt = (
-            "The interview is now complete. Provide a brief 3-4 sentence holistic assessment of the "
-            "candidate's performance, explicitly considering the interview style, question variety, "
-            "strongest answer area, and one improvement area."
+            "The interview is now complete. Provide a 4-6 sentence holistic assessment that includes:\n"
+            "1. Overall impression of the candidate's performance across the interview.\n"
+            "2. Their strongest area and a specific example from their answers.\n"
+            "3. One concrete area for improvement with a specific suggestion.\n"
+            "4. A reflection tip: for each question type covered, briefly note what the interviewer "
+            "was really testing — help the candidate understand the pattern so they can improve "
+            "for future interviews.\n"
+            "5. One piece of strategic advice for their next interview (e.g., structure, hooks, framing)."
         )
         self.chat_history.append({"role": "user", "content": closing_prompt})
         closing = self._call_llm(self.chat_history)
@@ -405,6 +496,7 @@ class InterviewSession:
                     "clarity": score.clarity,
                     "overall": score.overall,
                     "feedback": score.feedback,
+                    "interviewer_intent": score.interviewer_intent,
                 }
                 for index, score in enumerate(self.scores)
             ],
@@ -449,7 +541,7 @@ class InterviewSession:
             model=self.model,
             messages=messages,
             temperature=0.5,
-            max_tokens=400,
+            max_tokens=800,
         )
         return resp.choices[0].message.content.strip()
 
@@ -466,14 +558,17 @@ class InterviewSession:
             f"Candidate answer: \"{answer}\"\n\n"
             "Return ONLY a JSON object with keys: "
             "technical_accuracy (float), completeness (float), clarity (float), "
-            "overall (float), feedback (str, max 2 sentences)."
+            "overall (float), feedback (str, max 2 sentences of actionable advice), "
+            "interviewer_intent (str, 1 sentence explaining what the interviewer was really "
+            "trying to assess with this specific question — help the candidate understand "
+            "the hidden purpose behind the question)."
         )
 
         resp = get_client().chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": eval_prompt}],
             temperature=0.0,
-            max_tokens=220,
+            max_tokens=500,
             response_format={"type": "json_object"},
         )
         raw = resp.choices[0].message.content.strip()
@@ -486,6 +581,7 @@ class InterviewSession:
                 "clarity": 3.0,
                 "overall": 3.0,
                 "feedback": "Could not parse rubric.",
+                "interviewer_intent": "",
             }
 
         return RubricScore(
@@ -497,4 +593,5 @@ class InterviewSession:
             question=question,
             answer=answer,
             question_type=question_type,
+            interviewer_intent=data.get("interviewer_intent", ""),
         )
