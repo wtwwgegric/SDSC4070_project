@@ -336,6 +336,55 @@ def prep_chat_summary(
     return resp.choices[0].message.content.strip()
 
 
+def prep_chat_prelude(
+    jd_analysis: dict[str, Any],
+    cv_text: str = "",
+    self_intro: str = "",
+    match_results: list[dict[str, Any]] | None = None,
+    model: str = None,
+) -> str:
+    """Generate a proactive first-turn prep briefing before the user asks anything."""
+    model = model or get_model("gpt-4o-mini")
+    system_prompt = _build_prep_system_prompt(jd_analysis, cv_text, self_intro, match_results)
+
+    opening_request = (
+        "The candidate has just opened interview prep and may not know what to ask yet. "
+        "Write the FIRST assistant message as a proactive preparation prelude.\n\n"
+        "GOALS:\n"
+        "- Calm the candidate down and orient them immediately.\n"
+        "- Give role-specific interview insights based on the JD and candidate context.\n"
+        "- Do not wait for the candidate to ask the first question.\n\n"
+        "STRUCTURE:\n"
+        "1. Start Here — 2 short sentences reframing the interview as a two-way conversation, not an exam. "
+        "Keep the tone lightly witty but still professional.\n"
+        "2. What This Interview Is Likely To Test — 3 concise bullet points tailored to the role.\n"
+        "3. Before The Interview — 3 concise bullet points covering practical checks like time/date, format, "
+        "camera, dress expectations, recruiter logistics, and rereading the JD.\n"
+        "4. How To Answer Well — 3 concise bullet points teaching frameworks such as STAR, conclusion-first, "
+        "and what/why/how.\n"
+        "5. Mindset — 1 short paragraph encouraging confidence and reminding them this is mutual selection.\n"
+        "6. Try asking me next — exactly 3 bullet suggestions for follow-up prompts.\n\n"
+        "STYLE RULES:\n"
+        "- Use Markdown headings and short bullets.\n"
+        "- Keep it under 320 words.\n"
+        "- Sound calm, sharp, and supportive.\n"
+        "- Use one light playful line at most; do not sound like social-media slang.\n"
+        "- If interview format is unknown, tell the candidate what to confirm rather than inventing details.\n"
+        "- If the candidate has clear matched strengths or skill gaps, mention them briefly and frame gaps as growth points."
+    )
+
+    resp = get_client().chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": opening_request},
+        ],
+        temperature=0.5,
+        max_tokens=900,
+    )
+    return resp.choices[0].message.content.strip()
+
+
 def prep_chat_response(
     user_message: str,
     chat_history: list[dict[str, str]],

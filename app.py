@@ -26,7 +26,8 @@ from career_copilot.cv_matcher import index_cv, match_cv_to_jd, compute_match_me
 from career_copilot.value_refiner import refine_value
 from career_copilot.cover_letter import generate_cover_letter
 from career_copilot.interview_simulator import (
-    InterviewSession, available_interview_styles, generate_self_intro_draft, prep_chat_response, prep_chat_summary
+    InterviewSession, available_interview_styles, generate_self_intro_draft, prep_chat_prelude,
+    prep_chat_response, prep_chat_summary
 )
 from career_copilot.serper import fetch_company_culture, synthesize_culture_insights
 from career_copilot.eval_metrics import (
@@ -61,6 +62,7 @@ _defaults = {
     "interview_mode": "prep",          # "prep" | "test"
     "interview_style": "1-to-1 interview",
     "prep_chat_history": [],            # list of {role, content}
+    "prep_chat_initialized": False,
     "prep_chat_summary": "",
     "candidate_name": "",
     "company_name": "",
@@ -786,6 +788,38 @@ with tab_sim:
         # ── PREP CHAT MODE ────────────────────────────────────────────
         if st.session_state["interview_mode"] == "prep":
             prep_history = st.session_state["prep_chat_history"]
+            has_user_turns = any(msg.get("role") == "user" for msg in prep_history)
+
+            if not prep_history and not st.session_state.get("prep_chat_initialized", False):
+                with st.spinner("Preparing your interview starting point…"):
+                    try:
+                        opening = prep_chat_prelude(
+                            jd_analysis=analysis,
+                            cv_text=st.session_state.get("cv_text", ""),
+                            self_intro=st.session_state.get("interview_self_intro", ""),
+                            match_results=st.session_state.get("match_results"),
+                        )
+                    except Exception:
+                        opening = (
+                            "### Start Here\n"
+                            "This is not a pop quiz. A company is interested enough to talk to you, and now "
+                            "you get a short window to show why the fit makes sense on both sides.\n\n"
+                            "### Before The Interview\n"
+                            "- Confirm the time, date, format, and whether camera or dress expectations were specified.\n"
+                            "- Re-read the JD and identify the top 3 things they are most likely to test.\n"
+                            "- Prepare one strong self-introduction, one STAR story, and two reverse questions.\n\n"
+                            "### How To Answer Well\n"
+                            "- Use STAR for behavioral questions.\n"
+                            "- Use conclusion first, then supporting points, for analytical questions.\n"
+                            "- Use what / why / how for open-ended or situational questions.\n\n"
+                            "### Try asking me next\n"
+                            "- Help me polish my self-introduction\n"
+                            "- Predict likely interview questions for this role\n"
+                            "- Give me 3 strong reverse questions to ask"
+                        )
+                st.session_state["prep_chat_history"] = [{"role": "assistant", "content": opening}]
+                st.session_state["prep_chat_initialized"] = True
+                st.rerun()
 
             # ── Compact top bar: tips + action buttons ──
             top_left, top_right = st.columns([3, 1])
@@ -797,7 +831,7 @@ with tab_sim:
             with top_right:
                 btn_cols = st.columns(2)
                 with btn_cols[0]:
-                    do_summarise = st.button("📋", help="Summarise session", disabled=not prep_history)
+                    do_summarise = st.button("📋", help="Summarise session", disabled=not has_user_turns)
                 with btn_cols[1]:
                     do_clear = st.button("🗑️", help="Clear chat", disabled=not prep_history)
 
@@ -838,6 +872,7 @@ with tab_sim:
             # ── Handle top-bar button actions ──
             if do_clear:
                 st.session_state["prep_chat_history"] = []
+                st.session_state["prep_chat_initialized"] = False
                 st.session_state["prep_chat_summary"] = ""
                 st.rerun()
             if do_summarise:
@@ -865,16 +900,31 @@ with tab_sim:
                     with st.chat_message(msg["role"]):
                         st.markdown(msg["content"])
 
+            starter_prompt = None
+            if prep_history and not has_user_turns:
+                st.caption("Quick start")
+                start_col1, start_col2, start_col3 = st.columns(3)
+                with start_col1:
+                    if st.button("Polish my self-intro", use_container_width=True):
+                        starter_prompt = "Help me polish my self-introduction for this role."
+                with start_col2:
+                    if st.button("Predict likely questions", use_container_width=True):
+                        starter_prompt = "Based on this JD and my background, predict the most likely interview questions and tell me why they matter."
+                with start_col3:
+                    if st.button("Prepare reverse questions", use_container_width=True):
+                        starter_prompt = "Give me 3 strong reverse questions I can ask the interviewer for this role, and explain why each one is smart."
+
             # ── Chat input (pinned at bottom by Streamlit) ──
             user_msg = st.chat_input("Ask your career coach…")
-            if user_msg:
+            submitted_msg = starter_prompt or user_msg
+            if submitted_msg:
                 st.session_state["prep_chat_history"].append(
-                    {"role": "user", "content": user_msg}
+                    {"role": "user", "content": submitted_msg}
                 )
                 with st.spinner("Thinking…"):
                     try:
                         reply = prep_chat_response(
-                            user_message=user_msg,
+                            user_message=submitted_msg,
                             chat_history=prep_history[:-1],
                             jd_analysis=analysis,
                             cv_text=st.session_state.get("cv_text", ""),
