@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .env
+project_report_draft.md
 .DS_Store
 *.egg-info/
 dist/
