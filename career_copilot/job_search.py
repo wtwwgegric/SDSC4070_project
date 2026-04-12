@@ -135,6 +135,10 @@ def search_jobs(
     # country_indeed falls back to location if not explicitly set
     _country = (country_indeed or location or "").strip().lower() or None
 
+    # When no explicit city/location is given, use country/region as the
+    # location hint so LinkedIn still gets a geographic filter.
+    _effective_location = location or country_indeed or ""
+
     # Cap LinkedIn at 10 to stay under its rate-limit threshold
     linkedin_cap = min(results_wanted, 10)
     indeed_cap = min(results_wanted, 25)
@@ -147,7 +151,7 @@ def search_jobs(
         kwargs: dict[str, Any] = dict(
             site_name=[site],
             search_term=search_term,
-            location=location or None,
+            location=_effective_location or None,
             results_wanted=cap,
             hours_old=hours_old,
             linkedin_fetch_description=(
@@ -162,6 +166,18 @@ def search_jobs(
             if df is not None and not df.empty:
                 rows.append(df)
                 continue
+
+            # LinkedIn sometimes returns empty on the first attempt due to
+            # transient rate-limiting. Retry once without location filter.
+            if site == "linkedin":
+                import time
+                time.sleep(2)
+                retry_kw = dict(kwargs)
+                retry_kw["location"] = None
+                retry_df = scrape_jobs(**retry_kw)
+                if retry_df is not None and not retry_df.empty:
+                    rows.append(retry_df)
+                    continue
 
             # Indeed often returns no rows on cloud runners for narrow geo filters.
             # Retry once with broader parameters before giving up.
@@ -178,7 +194,7 @@ def search_jobs(
             fallback_results.extend(
                 _search_jobs_via_serper(
                     search_term=search_term,
-                    location=location,
+                    location=_effective_location,
                     site=site,
                     num_results=cap,
                 )
@@ -189,7 +205,7 @@ def search_jobs(
             fallback_results.extend(
                 _search_jobs_via_serper(
                     search_term=search_term,
-                    location=location,
+                    location=_effective_location,
                     site=site,
                     num_results=cap,
                 )
@@ -211,14 +227,14 @@ def search_jobs(
         if site_errors and len(site_errors) == len(sites):
             raise ValueError(
                 "Job board search failed on all selected sites. "
-                "LinkedIn is commonly rate-limited, and Indeed may block cloud scraping. "
-                "If you added a Serper key, the app will try a web-search fallback automatically. "
-                "Otherwise, paste a JD URL/text manually."
+                "LinkedIn may be rate-limited — wait a minute and retry, or reduce Results per site. "
+                "If you added a Serper API key, the app will try a web-search fallback automatically. "
+                "You can also paste a JD URL or text directly in the JD Analyzer tab."
             )
         raise ValueError(
             "No jobs were returned by the selected job boards. "
-            "This is often caused by an overly strict location/country filter or cloud scraping limits. "
-            "Try broader keywords, clear the country filter, add a Serper key for web-search fallback, or paste a JD URL/text manually."
+            "Try broader keywords, change the Country/Region filter, "
+            "or paste a JD URL/text in the JD Analyzer tab."
         )
 
     import pandas as pd

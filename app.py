@@ -1,11 +1,10 @@
 """Career Co-pilot — Streamlit App.
 
 Tabs:
-  0. Job Search     — search LinkedIn / Indeed for roles
-  1. JD Analyzer    — paste a JD → get structured insights + jargon decoder
-  2. CV Matcher     — chat-based CV ↔ JD match advisor + structured metrics
-  3. Cover Letter   — auto-generate a grounded cover letter
-  4. Interview Sim  — multi-turn interview with per-round rubric scoring
+  0. Find & Analyze JD — search LinkedIn/Indeed OR paste/URL fetch a JD → structured insights
+  1. CV Matcher        — chat-based CV ↔ JD match advisor + structured metrics
+  2. Cover Letter      — auto-generate a grounded cover letter
+  3. Interview Sim     — multi-turn interview with per-round rubric scoring
 """
 from pathlib import Path
 import sys
@@ -316,155 +315,172 @@ def _check_api_key() -> bool:
 # ---------------------------------------------------------------------------
 # Main area — 4 tabs
 # ---------------------------------------------------------------------------
-tab_search, tab_jd, tab_cv, tab_cl, tab_sim = st.tabs(
-    ["🔎 Job Search", "📋 JD Analyzer", "🎯 CV Matcher", "✉️ Cover Letter", "🎤 Interview Sim"]
+tab_jd, tab_cv, tab_cl, tab_sim = st.tabs(
+    ["🔎 Find & Analyze JD", "🎯 CV Matcher", "✉️ Cover Letter", "🎤 Interview Sim"]
 )
 
 # ============================================================
-# Tab 0 — Job Search
-# ============================================================
-with tab_search:
-    st.header("Job Search")
-    st.markdown(
-        "Search LinkedIn and/or Indeed for matching roles. "
-        "Click **Use this JD** on any result to send the description straight to the JD Analyzer."
-    )
-
-    s_col1, s_col2 = st.columns([2, 1])
-    with s_col1:
-        search_term = st.text_input(
-            "Job title / keywords",
-            placeholder="e.g. Data Analyst Intern",
-            key="job_search_term",
-        )
-    with s_col2:
-        search_location = st.text_input(
-            "Location",
-            placeholder="e.g. Hong Kong",
-            key="job_search_location",
-        )
-
-    s_col3, s_col4 = st.columns([2, 1])
-    with s_col3:
-        search_sites = st.multiselect(
-            "Job boards",
-            options=["linkedin", "indeed"],
-            default=["linkedin", "indeed"],
-            help="LinkedIn is searched first. If scraping is blocked on cloud, the app can fall back to Serper web search when a Serper key is provided.",
-        )
-    with s_col4:
-        search_results_n = st.slider("Results per site", min_value=5, max_value=20, value=10)
-
-    # Country selector for Indeed (must match JobSpy's valid country list)
-    _INDEED_COUNTRIES = [
-        "hong kong", "usa", "uk", "australia", "canada", "singapore", "china",
-        "india", "japan", "south korea", "taiwan", "malaysia", "philippines",
-        "thailand", "vietnam", "indonesia", "new zealand", "germany", "france",
-        "netherlands", "sweden", "switzerland", "ireland", "uae", "saudi arabia",
-        "qatar", "south africa", "brazil", "mexico", "worldwide",
-    ]
-    search_country = st.selectbox(
-        "Country (for Indeed filtering)",
-        options=[""] + _INDEED_COUNTRIES,
-        index=0,
-        format_func=lambda x: x.title() if x else "— auto-detect from location —",
-        help="Optional. Leave blank unless Indeed is clearly searching the wrong country.",
-        key="job_search_country",
-    )
-
-    if st.button("🔍 Search Jobs", type="primary", disabled=not search_term):
-        if not search_sites:
-            st.warning("Select at least one job board.")
-        else:
-            with st.spinner(f"Searching {', '.join(search_sites)}… (LinkedIn may take ~20 s)"):
-                try:
-                    results = search_jobs(
-                        search_term=search_term,
-                        location=search_location,
-                        sites=search_sites,
-                        results_wanted=search_results_n,
-                        country_indeed=st.session_state.get("job_search_country", ""),
-                    )
-                    st.session_state["job_search_results"] = results
-                except Exception as e:
-                    st.error(f"Search failed: {e}")
-
-    results = st.session_state["job_search_results"]
-    if results:
-        st.success(f"Found {len(results)} job(s)")
-        for i, job in enumerate(results):
-            site_badge = f"`{job['site'].upper()}`"
-            with st.container(border=True):
-                h_col, b_col = st.columns([4, 1])
-                with h_col:
-                    st.markdown(f"**{job['title']}** — {job['company']}")
-                    meta_parts = [p for p in [job['location'], job['job_type'], job['date_posted']] if p and p != 'nan']
-                    st.caption("  ·  ".join(meta_parts) + f"  ·  {site_badge}")
-                    if job.get("job_url"):
-                        st.markdown(f"[View original posting]({job['job_url']})")
-                with b_col:
-                    if st.button("📋 Use this JD", key=f"use_jd_{i}"):
-                        st.session_state["jd_input_text"] = job["description"]
-                        st.session_state["company_name"] = job["company"]
-                        st.toast("✅ JD loaded — switch to the 📋 JD Analyzer tab and click Analyze JD.")
-                        st.rerun()
-                if job.get("description"):
-                    with st.expander("Preview description"):
-                        st.text(job["description"][:800] + ("…" if len(job["description"]) > 800 else ""))
-
-# ============================================================
-# Tab 1 — JD Analyzer
+# Tab 0 — Find & Analyze JD  (merged Job Search + JD Analyzer)
 # ============================================================
 with tab_jd:
-    st.header("Job Description Analyzer")
+    st.header("Find & Analyze JD")
     st.markdown(
-        "Paste a JD below, fetch it from a URL, or pick one from the **Job Search** tab. "
-        "The agent will extract hard skills, soft skills, decode jargon, and suggest prep topics."
+        "**Paste** a JD, **fetch** it from a URL, or **search** LinkedIn/Indeed — "
+        "then click **Analyze JD** to extract skills, decode jargon, and get prep topics."
     )
 
-    # ── URL fetch ──────────────────────────────────────────────────────────
-    with st.expander("⬇️ Fetch JD from a LinkedIn or Indeed URL", expanded=False):
-        url_col, btn_col = st.columns([4, 1])
-        with url_col:
-            jd_url = st.text_input(
-                "Job posting URL",
-                placeholder="https://www.linkedin.com/jobs/view/… or https://www.indeed.com/viewjob?…",
-                key="jd_url_input",
-                label_visibility="collapsed",
+    # ── Inner sub-tabs: Paste/URL (primary) | Find a Job (search) ─────────
+    inner_paste, inner_search = st.tabs(["📋 Paste / URL", "🔎 Find a Job"])
+
+    # ── Sub-tab A: Paste / URL ─────────────────────────────────────────────
+    with inner_paste:
+        with st.expander("⬇️ Fetch JD from a LinkedIn or Indeed URL", expanded=False):
+            url_col, btn_col = st.columns([4, 1])
+            with url_col:
+                jd_url = st.text_input(
+                    "Job posting URL",
+                    placeholder="https://www.linkedin.com/jobs/view/… or https://www.indeed.com/viewjob?…",
+                    key="jd_url_input",
+                    label_visibility="collapsed",
+                )
+            with btn_col:
+                fetch_clicked = st.button("⬇️ Fetch", disabled=not jd_url)
+            if fetch_clicked and jd_url:
+                with st.spinner("Fetching job description…"):
+                    try:
+                        fetched = fetch_jd_from_url(jd_url)
+                        st.session_state["jd_input_text"] = fetched
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(str(e))
+
+        jd_input = st.text_area(
+            "Paste Job Description here",
+            height=250,
+            placeholder="e.g. We are looking for a Data Engineer to join our fast-paced team…",
+            key="jd_input_text",
+        )
+
+        if st.button("🔍 Analyze JD", type="primary", key="analyze_jd_paste") and _check_api_key():
+            if not jd_input.strip():
+                st.warning("Please paste a JD first.")
+            else:
+                with st.spinner("Analyzing JD…"):
+                    try:
+                        result = analyze_jd(jd_input)
+                        st.session_state["jd_analysis"] = result
+                        st.session_state["match_results"] = None
+                        st.session_state["cover_letter"] = ""
+                        st.session_state["cv_indexed"] = False
+                    except Exception as e:
+                        st.error(f"Analysis failed: {e}")
+
+    # ── Sub-tab B: Find a Job (search) ────────────────────────────────────
+    with inner_search:
+        st.caption(
+            "LinkedIn scraping can occasionally be rate-limited. "
+            "If search fails, copy a job URL into the **Paste / URL** tab to fetch the JD directly."
+        )
+
+        _COUNTRY_REGION_OPTIONS = [
+            "hong kong", "usa", "uk", "australia", "canada", "singapore", "china",
+            "india", "japan", "south korea", "taiwan", "malaysia", "philippines",
+            "thailand", "vietnam", "indonesia", "new zealand", "germany", "france",
+            "netherlands", "sweden", "switzerland", "ireland", "uae", "saudi arabia",
+            "qatar", "south africa", "brazil", "mexico", "worldwide",
+        ]
+
+        # Row 1: keywords + country/region
+        s_col1, s_col2 = st.columns([2, 1])
+        with s_col1:
+            search_term = st.text_input(
+                "Job title / keywords",
+                placeholder="e.g. Data Analyst Intern",
+                key="job_search_term",
             )
-        with btn_col:
-            fetch_clicked = st.button("⬇️ Fetch", disabled=not jd_url)
-        if fetch_clicked and jd_url:
-            with st.spinner("Fetching job description…"):
-                try:
-                    fetched = fetch_jd_from_url(jd_url)
-                    st.session_state["jd_input_text"] = fetched
-                    st.rerun()
-                except ValueError as e:
-                    st.error(str(e))
+        with s_col2:
+            search_country = st.selectbox(
+                "Country / Region",
+                options=[""] + _COUNTRY_REGION_OPTIONS,
+                index=0,
+                format_func=lambda x: x.title() if x else "— any —",
+                help="Filters results to this country/region. Also used as the location hint for LinkedIn when the City field below is left blank.",
+                key="job_search_country",
+            )
 
-    jd_input = st.text_area(
-        "Paste Job Description here",
-        height=250,
-        placeholder="e.g. We are looking for a Data Engineer to join our fast-paced team…",
-        key="jd_input_text",
-    )
+        # Row 2: optional city + job boards + results count
+        s_col3, s_col4, s_col5 = st.columns([2, 2, 1])
+        with s_col3:
+            search_location = st.text_input(
+                "City (optional)",
+                placeholder="e.g. Kowloon, Central … leave blank to use country/region above",
+                key="job_search_location",
+            )
+        with s_col4:
+            search_sites = st.multiselect(
+                "Job boards",
+                options=["linkedin", "indeed"],
+                default=["linkedin"],
+                help="LinkedIn is the primary source. Add Indeed for more results. If scraping is blocked, the app falls back to Serper web search when a key is provided.",
+            )
+        with s_col5:
+            search_results_n = st.slider("Results per site", min_value=5, max_value=20, value=10)
 
-    if st.button("🔍 Analyze JD", type="primary") and _check_api_key():
-        if not jd_input.strip():
-            st.warning("Please paste a JD first.")
-        else:
-            with st.spinner("Analyzing JD…"):
-                try:
-                    result = analyze_jd(jd_input)
-                    st.session_state["jd_analysis"] = result
-                    # Reset downstream state when JD changes
-                    st.session_state["match_results"] = None
-                    st.session_state["cover_letter"] = ""
-                    st.session_state["cv_indexed"] = False
-                except Exception as e:
-                    st.error(f"Analysis failed: {e}")
+        if st.button("🔍 Search Jobs", type="primary", disabled=not search_term):
+            if not search_sites:
+                st.warning("Select at least one job board.")
+            else:
+                with st.spinner(f"Searching {', '.join(search_sites)}… (LinkedIn may take ~20 s)"):
+                    try:
+                        results = search_jobs(
+                            search_term=search_term,
+                            location=search_location,
+                            sites=search_sites,
+                            results_wanted=search_results_n,
+                            country_indeed=st.session_state.get("job_search_country", ""),
+                        )
+                        st.session_state["job_search_results"] = results
+                    except Exception as e:
+                        st.error(f"Search failed: {e}")
 
+        search_results = st.session_state["job_search_results"]
+        if search_results:
+            st.success(f"Found {len(search_results)} job(s). Click **Use this JD** to load and analyze automatically.")
+            for i, job in enumerate(search_results):
+                site_badge = f"`{job['site'].upper()}`"
+                with st.container(border=True):
+                    h_col, b_col = st.columns([4, 1])
+                    with h_col:
+                        st.markdown(f"**{job['title']}** — {job['company']}")
+                        meta_parts = [p for p in [job['location'], job['job_type'], job['date_posted']] if p and p != 'nan']
+                        st.caption("  ·  ".join(meta_parts) + f"  ·  {site_badge}")
+                        if job.get("job_url"):
+                            st.markdown(f"[View original posting]({job['job_url']})")
+                    with b_col:
+                        if st.button("📋 Use this JD", key=f"use_jd_{i}"):
+                            st.session_state["jd_input_text"] = job["description"]
+                            st.session_state["company_name"] = job["company"]
+                            # Auto-analyze immediately
+                            if job["description"].strip() and _check_api_key():
+                                with st.spinner("Analyzing JD…"):
+                                    try:
+                                        result = analyze_jd(job["description"])
+                                        st.session_state["jd_analysis"] = result
+                                        st.session_state["match_results"] = None
+                                        st.session_state["cover_letter"] = ""
+                                        st.session_state["cv_indexed"] = False
+                                        st.toast("✅ JD analyzed — results are shown below.")
+                                    except Exception as e:
+                                        st.toast(f"⚠️ Auto-analysis failed: {e}. Switch to Paste/URL tab and click Analyze JD.")
+                            else:
+                                st.toast("✅ JD loaded — switch to the Paste / URL tab and click Analyze JD.")
+                            st.rerun()
+                    if job.get("description"):
+                        with st.expander("Preview description"):
+                            st.text(job["description"][:800] + ("…" if len(job["description"]) > 800 else ""))
+
+    # ── Analysis results — always below inner sub-tabs ─────────────────────
+    st.divider()
     analysis = st.session_state.get("jd_analysis")
     if analysis:
         col1, col2 = st.columns(2)
@@ -495,6 +511,8 @@ with tab_jd:
         st.divider()
         st.subheader("📝 Role Summary")
         st.write(analysis.get("summary", ""))
+    else:
+        st.info("Paste a JD and click **Analyze JD**, or search for a role above and click **Use this JD**.")
 
 # ============================================================
 # Tab 2 — CV Matcher (Chat + Metrics)
@@ -510,7 +528,7 @@ with tab_cv:
     cv_text = st.session_state.get("cv_text", "")
 
     if not analysis:
-        st.info("➡️ Analyze a JD first (Tab 1).")
+        st.info("➡️ Analyze a JD first (tab: Find & Analyze JD).")
     elif not cv_text:
         st.info("➡️ Upload your CV in the sidebar.")
     else:
@@ -683,9 +701,9 @@ with tab_cl:
     matches = st.session_state.get("match_results")
 
     if not analysis:
-        st.info("➡️ Analyze a JD first (Tab 1).")
+        st.info("➡️ Analyze a JD first (tab: Find & Analyze JD).")
     elif not matches:
-        st.info("➡️ Run CV Matching first (Tab 2).")
+        st.info("➡️ Run CV Matching first (CV Matcher tab).")
     else:
         candidate = st.session_state.get("candidate_name") or "the candidate"
         company = st.session_state.get("company_name") or "your company"
@@ -770,7 +788,7 @@ with tab_sim:
     session: InterviewSession | None = st.session_state.get("interview_session")
 
     if not analysis:
-        st.info("➡️ Analyze a JD first (Tab 1).")
+        st.info("➡️ Analyze a JD first (tab: Find & Analyze JD).")
     elif not _check_api_key():
         pass  # blocked — no API key
     else:
