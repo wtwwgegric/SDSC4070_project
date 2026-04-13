@@ -759,11 +759,18 @@ with tab_cl:
             cv_text_for_check = st.session_state.get("cv_text", "")
             jd_text_for_check = st.session_state.get("jd_text", "")
             if cv_text_for_check:
-                hc = hallucination_check(
-                    cv_text_for_check,
-                    st.session_state["cover_letter"],
-                    jd_text=jd_text_for_check,
-                )
+                try:
+                    hc = hallucination_check(
+                        cv_text_for_check,
+                        st.session_state["cover_letter"],
+                        jd_text=jd_text_for_check,
+                    )
+                except TypeError:
+                    # Older version of eval_metrics without jd_text param
+                    hc = hallucination_check(
+                        cv_text_for_check,
+                        st.session_state["cover_letter"],
+                    )
                 score = hc["grounding_score"]
                 hallucinated = hc.get("hallucinated_count", 0)
                 jd_sourced = hc.get("jd_sourced_entities", 0)
