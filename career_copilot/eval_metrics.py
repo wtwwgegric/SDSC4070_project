@@ -149,10 +149,22 @@ def hallucination_check(cv_text: str, generated_text: str, window: int = 4, jd_t
             if len(ent) >= 2:
                 entities_found.add(ent)
 
-    # Filter out common non-CV phrases (salutations, generic proper nouns)
-    generic = {"Dear Hiring Manager", "Yours", "Thank", "Additionally", "Furthermore",
-               "Complementing"}
-    entities_found = {e for e in entities_found if e not in generic and len(e) > 2}
+    # Filter out common non-CV phrases, salutations, and generic professional language
+    generic = {
+        "Dear Hiring Manager", "Hiring Manager", "Dear Sir", "Dear Madam",
+        "Yours Sincerely", "Yours Faithfully", "Kind Regards", "Best Regards",
+        "Thank You", "Yours", "Thank", "Additionally", "Furthermore",
+        "Complementing", "Technical Skills", "Work Experience", "Cover Letter",
+        "Job Description", "Application Letter", "Career Objective",
+        "Soft Skills", "Hard Skills", "Key Skills", "Core Competencies",
+        "Bachelor", "Master", "Doctor", "Honours", "First Class",
+    }
+    # Also filter single-word entries and anything that looks like a common English phrase
+    entities_found = {
+        e for e in entities_found
+        if e not in generic and len(e) > 2
+        and not any(g.lower() in e.lower() for g in {"Hiring Manager", "Dear", "Sincerely", "Regards"})
+    }
 
     traceable_entities = []
     untraceable_entities = []   # not in CV or JD → genuine hallucination risk

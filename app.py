@@ -777,9 +777,9 @@ with tab_cl:
 
                 hcol1, hcol2, hcol3 = st.columns(3)
                 hcol1.metric(
-                    "🔍 Hallucinated facts",
+                    "⚠️ Claims to verify",
                     str(hallucinated),
-                    help="Entities in the letter that cannot be traced back to either your CV or the JD. These are genuine hallucination risks. Target: 0.",
+                    help="Entities in the letter our pattern-checker could not locate in your CV or the JD. These may be abbreviations, paraphrases, or rare false positives — review the list below and confirm manually. This does NOT mean the letter fabricated facts.",
                 )
                 hcol2.metric(
                     "✅ CV-traceable entities",
@@ -801,10 +801,18 @@ with tab_cl:
                     bcol3.metric("Keyword recall", f"{hc['keyword_score']:.0%}",
                                  help="Fraction of your CV's distinctive words that appear in the letter.")
                     st.caption(f"JD-sourced entities (company name, role title etc. — legitimate): **{jd_sourced}**")
-                    if hc.get("untraceable_samples"):
-                        st.caption("⚠️ Entities not found in CV **or** JD — review manually:")
-                        for s in hc["untraceable_samples"]:
-                            st.caption(f"  • {s}")
+                    untraced = hc.get("untraceable_samples", [])
+                    if untraced:
+                        st.markdown(
+                            "**⚠️ Claims to verify manually** — our pattern checker could not locate "
+                            "these in your CV or JD. They may be abbreviations, 'University' vs. "
+                            "'University of Hong Kong', or other partial matches. "
+                            "If any are invented facts not in your CV, edit the letter before sending."
+                        )
+                        for s in untraced:
+                            st.markdown(f"- `{s}`")
+                    else:
+                        st.success("✅ All detected entities traced back to CV or JD — no suspicious claims found.")
 
             st.download_button(
                 "⬇️ Download as .txt",
