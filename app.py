@@ -282,6 +282,7 @@ with st.sidebar:
                         st.error(result["error"])
                     else:
                         st.session_state["jd_analysis"] = result.get("jd_analysis")
+                        st.session_state["jd_text"] = jd_text
                         st.session_state["match_results"] = result.get("match_results")
                         st.session_state["match_metrics"] = result.get("match_metrics")
                         st.session_state["cv_indexed"] = True
@@ -386,6 +387,7 @@ with tab_jd:
                     try:
                         result = analyze_jd(jd_input)
                         st.session_state["jd_analysis"] = result
+                        st.session_state["jd_text"] = jd_input
                         st.session_state["match_results"] = None
                         st.session_state["cover_letter"] = ""
                         st.session_state["cv_indexed"] = False
@@ -492,6 +494,7 @@ with tab_jd:
                                     try:
                                         result = analyze_jd(desc)
                                         st.session_state["jd_analysis"] = result
+                                        st.session_state["jd_text"] = desc
                                         st.session_state["match_results"] = None
                                         st.session_state["cover_letter"] = ""
                                         st.session_state["cv_indexed"] = False
@@ -754,24 +757,45 @@ with tab_cl:
 
             # Hallucination / grounding check
             cv_text_for_check = st.session_state.get("cv_text", "")
+            jd_text_for_check = st.session_state.get("jd_text", "")
             if cv_text_for_check:
-                hc = hallucination_check(cv_text_for_check, st.session_state["cover_letter"])
+                hc = hallucination_check(
+                    cv_text_for_check,
+                    st.session_state["cover_letter"],
+                    jd_text=jd_text_for_check,
+                )
                 score = hc["grounding_score"]
+                hallucinated = hc.get("hallucinated_count", 0)
+                jd_sourced = hc.get("jd_sourced_entities", 0)
+
                 hcol1, hcol2, hcol3 = st.columns(3)
-                hcol1.metric("📎 Grounding score", f"{score:.0%}",
-                             help="Weighted composite: 50% entity traceability, 25% n-gram overlap, 25% keyword recall. Higher = less hallucination.")
-                hcol2.metric("Entity traceability", f"{hc['entity_score']:.0%}",
-                             help="Are proper nouns, numbers, and technical terms from the letter actually in your CV?")
-                hcol3.metric("Keyword recall", f"{hc['keyword_score']:.0%}",
-                             help="What fraction of your CV's distinctive words appear in the letter?")
+                hcol1.metric(
+                    "🔍 Hallucinated facts",
+                    str(hallucinated),
+                    help="Entities in the letter that cannot be traced back to either your CV or the JD. These are genuine hallucination risks. Target: 0.",
+                )
+                hcol2.metric(
+                    "✅ CV-traceable entities",
+                    f"{hc['traceable_entities']} / {hc['total_entities'] - jd_sourced}",
+                    help="Named entities (names, numbers, tools, project names) found in your CV.",
+                )
+                hcol3.metric(
+                    "📎 Grounding score",
+                    f"{score:.0%}",
+                    help="Weighted composite: 50% entity traceability (CV-only), 25% n-gram overlap, 25% keyword recall.",
+                )
 
                 with st.expander("📊 Grounding breakdown"):
                     bcol1, bcol2, bcol3 = st.columns(3)
-                    bcol1.metric("Entities checked", hc["total_entities"])
-                    bcol2.metric("Entities traceable", hc["traceable_entities"])
-                    bcol3.metric("N-gram overlap", f"{hc['ngram_score']:.0%}")
+                    bcol1.metric("Entity traceability", f"{hc['entity_score']:.0%}",
+                                 help="Fraction of CV-checkable entities found in the CV (JD-sourced ones excluded from denominator).")
+                    bcol2.metric("N-gram overlap", f"{hc['ngram_score']:.0%}",
+                                 help="Fraction of the letter's 3–4 word content phrases that appear verbatim in the CV.")
+                    bcol3.metric("Keyword recall", f"{hc['keyword_score']:.0%}",
+                                 help="Fraction of your CV's distinctive words that appear in the letter.")
+                    st.caption(f"JD-sourced entities (company name, role title etc. — legitimate): **{jd_sourced}**")
                     if hc.get("untraceable_samples"):
-                        st.caption("⚠️ Entities/phrases not directly matched in CV (review manually):")
+                        st.caption("⚠️ Entities not found in CV **or** JD — review manually:")
                         for s in hc["untraceable_samples"]:
                             st.caption(f"  • {s}")
 

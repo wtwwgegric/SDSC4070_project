@@ -103,7 +103,7 @@ def keyword_hit_rate_improvement(
     }
 
 
-def hallucination_check(cv_text: str, generated_text: str, window: int = 4) -> dict[str, Any]:
+def hallucination_check(cv_text: str, generated_text: str, window: int = 4, jd_text: str = "") -> dict[str, Any]:
     """Multi-strategy grounding check for generated cover letters.
 
     Combines three complementary signals:
@@ -130,6 +130,8 @@ def hallucination_check(cv_text: str, generated_text: str, window: int = 4) -> d
     """
     cv_lower = cv_text.lower()
     gen_lower = generated_text.lower()
+    # JD text is a legitimate second source — entities from JD are not hallucinations
+    jd_lower = jd_text.lower() if jd_text else ""
 
     # --- Strategy 1: Entity traceability ---
     # Extract things that MUST come from the CV: numbers, proper noun phrases,
@@ -153,14 +155,26 @@ def hallucination_check(cv_text: str, generated_text: str, window: int = 4) -> d
     entities_found = {e for e in entities_found if e not in generic and len(e) > 2}
 
     traceable_entities = []
-    untraceable_entities = []
+    untraceable_entities = []   # not in CV or JD → genuine hallucination risk
+    jd_sourced_entities = []    # not in CV but in JD → legitimate inclusions
     for ent in entities_found:
-        if ent.lower() in cv_lower:
+        ent_lower = ent.lower()
+        in_cv = ent_lower in cv_lower
+        in_jd = bool(jd_lower) and ent_lower in jd_lower
+        if in_cv:
             traceable_entities.append(ent)
+        elif in_jd:
+            jd_sourced_entities.append(ent)
         else:
             untraceable_entities.append(ent)
 
-    entity_score = (len(traceable_entities) / len(entities_found)) if entities_found else 1.0
+    # entity_score: only truly untraceable entities (not in CV AND not in JD) count as issues
+    # Denominator excludes JD-sourced entities (they are legitimate, not hallucinations)
+    cv_or_jd_checkable = len(entities_found) - len(jd_sourced_entities)
+    if cv_or_jd_checkable > 0:
+        entity_score = len(traceable_entities) / cv_or_jd_checkable
+    else:
+        entity_score = 1.0
 
     # --- Strategy 2: Short content n-gram overlap ---
     stopwords = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -215,8 +229,11 @@ def hallucination_check(cv_text: str, generated_text: str, window: int = 4) -> d
         "entity_score": round(entity_score, 4),
         "ngram_score": round(ngram_score, 4),
         "keyword_score": round(keyword_score, 4),
+        # Clear hallucination summary
         "total_entities": len(entities_found),
         "traceable_entities": len(traceable_entities),
+        "jd_sourced_entities": len(jd_sourced_entities),   # legitimate JD inclusions
+        "hallucinated_count": len(untraceable_entities),    # truly suspect: not in CV or JD
         "untraceable_samples": untraceable_entities[:5],
         # Legacy keys for app.py compatibility
         "total_phrases": len(entities_found),
