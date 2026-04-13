@@ -28,7 +28,6 @@ from career_copilot.interview_simulator import (
     InterviewSession, available_interview_styles, generate_self_intro_draft, prep_chat_prelude,
     prep_chat_response, prep_chat_summary
 )
-from career_copilot.serper import fetch_company_culture, synthesize_culture_insights
 from career_copilot.eval_metrics import (
     keyword_hit_rate,
     keyword_hit_rate_improvement,
@@ -42,6 +41,21 @@ from career_copilot.job_search import search_jobs, fetch_jd_from_url
 # Page config
 # ---------------------------------------------------------------------------
 st.set_page_config(page_title="Career Co-pilot", layout="wide", page_icon="🧭")
+
+# ---------------------------------------------------------------------------
+# Optional imports (graceful degradation when unavailable)
+# ---------------------------------------------------------------------------
+try:
+    from career_copilot.serper import fetch_company_culture, synthesize_culture_insights
+    _SERPER_AVAILABLE = True
+except Exception:
+    _SERPER_AVAILABLE = False
+
+    def fetch_company_culture(*_args, **_kwargs):  # type: ignore[override]
+        return []
+
+    def synthesize_culture_insights(*_args, **_kwargs) -> str:  # type: ignore[override]
+        return "Company culture lookup is unavailable (serper module failed to load)."
 
 # ---------------------------------------------------------------------------
 # Session-state initialisation
