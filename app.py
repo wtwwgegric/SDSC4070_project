@@ -461,13 +461,22 @@ with tab_jd:
                             st.markdown(f"[View original posting]({job['job_url']})")
                     with b_col:
                         if st.button("📋 Use this JD", key=f"use_jd_{i}"):
-                            st.session_state["jd_input_prefill"] = job["description"]
+                            desc = job["description"] or ""
+                            job_url = job.get("job_url", "")
+                            # Serper fallback only captures snippets — fetch full JD from URL
+                            if len(desc.strip()) < 300 and job_url:
+                                with st.spinner("Fetching full job description…"):
+                                    try:
+                                        desc = fetch_jd_from_url(job_url)
+                                    except Exception:
+                                        pass  # keep the snippet if fetch fails
+                            st.session_state["jd_input_prefill"] = desc
                             st.session_state["company_name"] = job["company"]
                             # Auto-analyze immediately
-                            if job["description"].strip() and _check_api_key():
+                            if desc.strip() and _check_api_key():
                                 with st.spinner("Analyzing JD…"):
                                     try:
-                                        result = analyze_jd(job["description"])
+                                        result = analyze_jd(desc)
                                         st.session_state["jd_analysis"] = result
                                         st.session_state["match_results"] = None
                                         st.session_state["cover_letter"] = ""
@@ -795,19 +804,11 @@ with tab_sim:
     elif not _check_api_key():
         pass  # blocked — no API key
     else:
-        # ── Mode toggle ──────────────────────────────────────────────
-        mode = st.radio(
-            "Interview mode",
-            options=["🏋️ Prep Chat", "📝 Mock Test"],
-            index=0 if st.session_state["interview_mode"] == "prep" else 1,
-            horizontal=True,
-            label_visibility="collapsed",
-        )
-        st.session_state["interview_mode"] = "prep" if mode == "🏋️ Prep Chat" else "test"
-        st.divider()
+        # ── Inner sub-tabs: Prep Chat | Mock Test ────────────────────
+        inner_prep, inner_mock = st.tabs(["🏋️ Prep Chat", "📝 Mock Test"])
 
         # ── PREP CHAT MODE ────────────────────────────────────────────
-        if st.session_state["interview_mode"] == "prep":
+        with inner_prep:
             prep_history = st.session_state["prep_chat_history"]
             has_user_turns = any(msg.get("role") == "user" for msg in prep_history)
 
@@ -960,7 +961,7 @@ with tab_sim:
                 st.rerun()
 
         # ── MOCK TEST MODE ────────────────────────────────────────────
-        else:
+        with inner_mock:
             style_options = available_interview_styles()
             st.session_state["interview_style"] = st.selectbox(
                 "Mock interview format",

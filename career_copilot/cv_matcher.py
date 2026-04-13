@@ -167,10 +167,28 @@ def compute_match_metrics(
     """
     cv_lower = cv_text.lower()
 
-    # --- Skill matching ---
+    # --- Helper: semantic match via RAG for items not found by substring ---
+    _SEMANTIC_THRESHOLD = 0.75  # cosine distance < this → count as matched
+    def _semantic_check(item: str) -> bool:
+        """Return True if the ChromaDB index has a passage close enough to `item`."""
+        try:
+            res = query_collection(_COLLECTION_NAME, query=item, k=1)
+            dists = res.get("distances", [[]])[0]
+            if dists and dists[0] < _SEMANTIC_THRESHOLD:
+                return True
+        except Exception:
+            pass
+        return False
+
+    # --- Skill matching (substring first, then semantic fallback) ---
     hard_skills = [s.strip() for s in jd_analysis.get("hard_skills", [])]
-    matched_skills = [s for s in hard_skills if s.lower() in cv_lower]
-    missing_skills = [s for s in hard_skills if s.lower() not in cv_lower]
+    matched_skills: list[str] = []
+    missing_skills: list[str] = []
+    for s in hard_skills:
+        if s.lower() in cv_lower or _semantic_check(s):
+            matched_skills.append(s)
+        else:
+            missing_skills.append(s)
     skill_score = len(matched_skills) / len(hard_skills) if hard_skills else 0.0
 
     # --- Experience matching (RAG similarity) ---
@@ -181,10 +199,15 @@ def compute_match_metrics(
     else:
         experience_score = 0.0
 
-    # --- Requirement / topic coverage ---
+    # --- Requirement / topic coverage (substring first, then semantic) ---
     topics = [t.strip() for t in jd_analysis.get("interview_topics", [])]
-    matched_topics = [t for t in topics if t.lower() in cv_lower]
-    missing_topics = [t for t in topics if t.lower() not in cv_lower]
+    matched_topics: list[str] = []
+    missing_topics: list[str] = []
+    for t in topics:
+        if t.lower() in cv_lower or _semantic_check(t):
+            matched_topics.append(t)
+        else:
+            missing_topics.append(t)
     requirement_score = len(matched_topics) / len(topics) if topics else 0.0
 
     # --- Overall ---

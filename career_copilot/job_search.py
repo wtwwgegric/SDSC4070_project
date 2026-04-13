@@ -330,7 +330,7 @@ def _parse_structured_job_data(html: str) -> str:
 
 def _fetch_via_reader(url: str, timeout: int = 30) -> str:
     """Fallback page reader for cloud environments where direct scraping is blocked."""
-    reader_url = f"https://r.jina.ai/http://{url}"
+    reader_url = f"https://r.jina.ai/{url}"
     try:
         resp = requests.get(reader_url, timeout=timeout)
     except requests.exceptions.RequestException:
