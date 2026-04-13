@@ -354,6 +354,9 @@ with tab_jd:
                     except ValueError as e:
                         st.error(str(e))
 
+        if "jd_input_prefill" in st.session_state:
+            st.session_state["jd_input_text"] = st.session_state.pop("jd_input_prefill")
+
         jd_input = st.text_area(
             "Paste Job Description here",
             height=250,
@@ -458,7 +461,7 @@ with tab_jd:
                             st.markdown(f"[View original posting]({job['job_url']})")
                     with b_col:
                         if st.button("📋 Use this JD", key=f"use_jd_{i}"):
-                            st.session_state["jd_input_text"] = job["description"]
+                            st.session_state["jd_input_prefill"] = job["description"]
                             st.session_state["company_name"] = job["company"]
                             # Auto-analyze immediately
                             if job["description"].strip() and _check_api_key():
